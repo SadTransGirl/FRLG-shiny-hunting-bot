@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import contextlib
 import logging
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +21,22 @@ from .sequence import run_steps
 logger = logging.getLogger(__name__)
 
 SETUP_FRAME = 'setup_frame.png'
+
+
+@contextlib.contextmanager
+def keep_pc_awake():
+    """Stop Windows from sleeping while hunting (the display may still turn off)."""
+    if sys.platform != 'win32':
+        yield
+        return
+    import ctypes
+
+    es_continuous, es_system_required = 0x80000000, 0x00000001
+    ctypes.windll.kernel32.SetThreadExecutionState(es_continuous | es_system_required)
+    try:
+        yield
+    finally:
+        ctypes.windll.kernel32.SetThreadExecutionState(es_continuous)
 
 
 class HuntStopped(Exception):
@@ -106,6 +124,10 @@ class Hunter:
 
     async def run(self) -> tuple[np.ndarray, CheckResult]:
         """Hunt until a shiny is found; returns its screenshot and check result."""
+        with keep_pc_awake():
+            return await self._run()
+
+    async def _run(self) -> tuple[np.ndarray, CheckResult]:
         await self.calibrate()
         wrong_in_a_row = 0
         started = time.monotonic()
