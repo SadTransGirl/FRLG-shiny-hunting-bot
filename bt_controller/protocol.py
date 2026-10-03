@@ -42,6 +42,22 @@ SUB_ENABLE_IMU = 0x40
 SUB_IMU_SENSITIVITY = 0x41
 SUB_ENABLE_VIBRATION = 0x48
 
+SUBCOMMAND_NAMES = {
+    SUB_BT_PAIRING: 'bluetooth pairing',
+    SUB_DEVICE_INFO: 'device info',
+    SUB_SET_INPUT_MODE: 'set input mode',
+    SUB_TRIGGER_ELAPSED: 'trigger buttons elapsed time',
+    SUB_SHIPMENT_MODE: 'shipment mode',
+    SUB_SPI_READ: 'read calibration (SPI)',
+    SUB_SET_MCU_CONFIG: 'NFC/IR config',
+    SUB_SET_MCU_STATE: 'NFC/IR state',
+    SUB_SET_PLAYER_LIGHTS: 'set player lights',
+    SUB_SET_HOME_LIGHT: 'set HOME light',
+    SUB_ENABLE_IMU: 'enable motion sensors',
+    SUB_IMU_SENSITIVITY: 'motion sensor sensitivity',
+    SUB_ENABLE_VIBRATION: 'enable vibration',
+}
+
 CONTROLLER_TYPE_PRO = 0x03
 FIRMWARE_VERSION = (0x03, 0x8B)
 BATTERY_AND_CONNECTION = 0x90  # battery full, Pro Controller connection info
@@ -200,6 +216,7 @@ class SwitchProtocol:
         return None
 
     def _handle_subcommand(self, subcommand: int, args: bytes) -> bytes:
+        logger.info('Switch request: %s', SUBCOMMAND_NAMES.get(subcommand, f'0x{subcommand:02X}'))
         logger.debug('subcommand 0x%02X args %s', subcommand, args[:16].hex())
 
         if subcommand == SUB_DEVICE_INFO:

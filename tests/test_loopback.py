@@ -7,9 +7,9 @@ setup handshake, and checks that button presses show up in the input reports.
 import asyncio
 
 import pytest
-from bumble import hid
+from bumble import hid, sdp
 from bumble.controller import Controller
-from bumble.core import PhysicalTransport
+from bumble.core import BT_PNP_INFORMATION_SERVICE, PhysicalTransport
 from bumble.device import Device
 from bumble.host import Host
 from bumble.link import LocalLink
@@ -70,6 +70,14 @@ async def test_switch_handshake_and_button_press(tmp_path):
     await switch.hid.connect_control_channel()
     await switch.hid.connect_interrupt_channel()
     await asyncio.wait_for(ctl.wait_connected(), 2)
+
+    # Like the real Switch, look up the Device ID record first.
+    async with sdp.Client(switch.hid.connection) as sdp_client:
+        records = await sdp_client.search_attributes(
+            [BT_PNP_INFORMATION_SERVICE], [(0x0201, 0x0202)]
+        )
+    ids = {attribute.id: attribute.value.value for attribute in records[0]}
+    assert ids == {0x0201: 0x057E, 0x0202: 0x2009}
 
     # Setup handshake in the order a Switch sends it.
     info = await switch.subcommand(0x02)

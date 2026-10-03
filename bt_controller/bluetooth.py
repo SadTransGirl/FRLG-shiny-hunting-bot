@@ -17,6 +17,7 @@ from bumble.core import (
     BT_HIDP_PROTOCOL_ID,
     BT_HUMAN_INTERFACE_DEVICE_SERVICE,
     BT_L2CAP_PROTOCOL_ID,
+    BT_PNP_INFORMATION_SERVICE,
     PhysicalTransport,
 )
 from bumble.device import Device, DeviceConfiguration
@@ -48,24 +49,67 @@ logger = logging.getLogger(__name__)
 CONTROLLER_NAME = 'Pro Controller'
 CLASS_OF_DEVICE = 0x002508  # Peripheral / Gamepad
 
-# Vendor-defined report descriptor listing the reports a Pro Controller uses.
-# The Switch talks to it with its own protocol; this mostly keeps SDP valid.
+# Device ID (PnP) record values of a genuine Pro Controller. The Switch looks
+# these up before anything else and drops controllers that don't match.
+NINTENDO_VENDOR_ID = 0x057E
+PRO_CONTROLLER_PRODUCT_ID = 0x2009
+
+# The report descriptor a genuine Pro Controller / Joy-Con publishes over Bluetooth.
 HID_REPORT_DESCRIPTOR = bytes.fromhex(
     '05010905a101'  # Usage Page (Generic Desktop), Usage (Game Pad), Collection
     '0601ff'  # Usage Page (Vendor 0xFF01)
     '85210921750895308102'  # Input 0x21, 48 bytes
     '85300930750895308102'  # Input 0x30, 48 bytes
+    '853109317508966901' '8102'  # Input 0x31, 361 bytes
+    '853209327508966901' '8102'  # Input 0x32, 361 bytes
+    '853309337508966901' '8102'  # Input 0x33, 361 bytes
+    '853f05091901291015002501750195108102'  # Input 0x3F: 16 buttons
+    '05010939150025077504950181420509750495018101'  # hat switch + padding
+    '0501093009310933093416000027ffff0000751095048102'  # 4 axes, 16 bit
+    '0601ff'
     '85010901750895309102'  # Output 0x01, 48 bytes
     '85100910750895309102'  # Output 0x10, 48 bytes
     '85110911750895309102'  # Output 0x11, 48 bytes
+    '85120912750895309102'  # Output 0x12, 48 bytes
     'c0'
 )
 
 
+def _device_id_record(handle: int) -> list[ServiceAttribute]:
+    return [
+        ServiceAttribute(SDP_SERVICE_RECORD_HANDLE_ATTRIBUTE_ID, DataElement.unsigned_integer_32(handle)),
+        ServiceAttribute(
+            SDP_SERVICE_CLASS_ID_LIST_ATTRIBUTE_ID,
+            DataElement.sequence([DataElement.uuid(BT_PNP_INFORMATION_SERVICE)]),
+        ),
+        ServiceAttribute(
+            SDP_BROWSE_GROUP_LIST_ATTRIBUTE_ID,
+            DataElement.sequence([DataElement.uuid(SDP_PUBLIC_BROWSE_ROOT)]),
+        ),
+        ServiceAttribute(
+            SDP_BLUETOOTH_PROFILE_DESCRIPTOR_LIST_ATTRIBUTE_ID,
+            DataElement.sequence([
+                DataElement.sequence([
+                    DataElement.uuid(BT_PNP_INFORMATION_SERVICE),
+                    DataElement.unsigned_integer_16(0x0103),
+                ]),
+            ]),
+        ),
+        ServiceAttribute(0x0200, DataElement.unsigned_integer_16(0x0103)),  # specification ID
+        ServiceAttribute(0x0201, DataElement.unsigned_integer_16(NINTENDO_VENDOR_ID)),
+        ServiceAttribute(0x0202, DataElement.unsigned_integer_16(PRO_CONTROLLER_PRODUCT_ID)),
+        ServiceAttribute(0x0203, DataElement.unsigned_integer_16(0x0001)),  # version
+        ServiceAttribute(0x0204, DataElement.boolean(True)),  # primary record
+        ServiceAttribute(0x0205, DataElement.unsigned_integer_16(0x0002)),  # vendor ID source: USB-IF
+    ]
+
+
 def _sdp_records() -> dict[int, list[ServiceAttribute]]:
     handle = 0x00010001
+    device_id_handle = 0x00010002
     text = lambda s: DataElement(DataElement.TEXT_STRING, s)  # noqa: E731
     return {
+        device_id_handle: _device_id_record(device_id_handle),
         handle: [
             ServiceAttribute(SDP_SERVICE_RECORD_HANDLE_ATTRIBUTE_ID, DataElement.unsigned_integer_32(handle)),
             ServiceAttribute(
