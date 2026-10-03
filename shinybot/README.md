@@ -8,6 +8,13 @@ when the colours change.
 
 ## The window (easiest)
 Double-click **`ShinyBot.pyw`** in the repo folder, or run `python -m shinybot gui`.
+The sidebar has three pages: **Hunt** (video, reset counter, Test/Start/Stop,
+sequences and regions, log), **Play** (video, on-screen controller, key list)
+and **Setup** (connect/pair the controller, camera, sound). The pills in the
+top bar show the controller, camera and sound status; click **Sound** to
+mute/unmute from any page. Text uses "Pokemon Pixel Font" by SpyroSteak
+(CC BY-SA).
+
 In the window:
 - **Connect** reconnects to a paired Switch. **Pair…** pairs a new one (open
   Controllers → Change Grip/Order first).

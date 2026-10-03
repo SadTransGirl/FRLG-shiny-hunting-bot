@@ -7,13 +7,16 @@ import tkinter as tk
 from collections.abc import Callable
 from tkinter import messagebox, simpledialog, ttk
 
+import customtkinter as ctk
+
+from . import theme
 from .recorder import merge_repeats
 from .sequence import Step, sequence_duration
 
 COLUMNS = ('press', 'hold', 'wait', 'repeat', 'note')
 HEADINGS = {'press': 'Buttons', 'hold': 'Hold (s)', 'wait': 'Wait after (s)',
             'repeat': 'Repeat', 'note': 'Note'}
-WIDTHS = {'press': 150, 'hold': 70, 'wait': 120, 'repeat': 60, 'note': 330}
+WIDTHS = {'press': 200, 'hold': 100, 'wait': 150, 'repeat': 90, 'note': 360}
 
 
 def parse_cell(column: str, text: str):
@@ -36,53 +39,70 @@ def parse_cell(column: str, text: str):
     return text
 
 
-class SequenceEditor(tk.Toplevel):
+def _button(parent, text: str, command, primary: bool = False) -> ctk.CTkButton:
+    return ctk.CTkButton(parent, text=text, command=command, height=34, width=10, corner_radius=10,
+                         font=theme.F['small'], border_width=0,
+                         fg_color=theme.ACCENT if primary else theme.PANEL_ALT,
+                         hover_color=theme.ACCENT_HOVER if primary else theme.PANEL_HOVER,
+                         text_color=theme.ACCENT_TEXT if primary else theme.TEXT)
+
+
+class SequenceEditor(ctk.CTkToplevel):
     def __init__(self, master, name: str, steps: list[Step],
                  on_save: Callable[[str, list[Step]], None]) -> None:
-        super().__init__(master)
+        super().__init__(master, fg_color=theme.BG)
         self.name = name
         self.steps = copy.deepcopy(steps)
         self.on_save = on_save
         self.dirty = False
-        self._editor: ttk.Entry | None = None
+        self._editor: tk.Entry | None = None
         self._editing: tuple[int, str] = (0, 'press')
         self._showing_error = False
         self.protocol('WM_DELETE_WINDOW', self.close)
         self._build()
         self._refresh()
         self._update_title()
+        # CustomTkinter sets its own icon on new windows after a moment; replace it after that.
+        self.after(250, lambda: theme.set_icon(self))
+        self.after(100, self.lift)
 
     def _build(self) -> None:
-        ttk.Label(self, padding=(8, 6), text=(
+        ctk.CTkLabel(self, text=(
             'Double-click a cell to edit it (Tab = next cell, Enter = done, Esc = cancel). '
-            '"Wait after" is the pause after a press, before the next one.')).pack(anchor='w')
-        frame = ttk.Frame(self, padding=(8, 0))
-        frame.pack(fill='both', expand=True)
-        self.tree = ttk.Treeview(frame, columns=('n',) + COLUMNS, show='headings', height=18,
+            '"Wait after" is the pause after a press, before the next one.'),
+            font=theme.F['small'], text_color=theme.TEXT_MUTED, anchor='w', justify='left').pack(
+            fill='x', padx=14, pady=(10, 6))
+        card = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=theme.RADIUS)
+        card.pack(fill='both', expand=True, padx=12)
+        frame = tk.Frame(card, bg=theme.PANEL)
+        frame.pack(fill='both', expand=True, padx=10, pady=10)
+        self.tree = ttk.Treeview(frame, columns=('n',) + COLUMNS, show='headings', height=12,
                                  selectmode='browse')
         self.tree.heading('n', text='#')
-        self.tree.column('n', width=40, anchor='e', stretch=False)
+        self.tree.column('n', width=50, anchor='e', stretch=False)
         for column in COLUMNS:
             self.tree.heading(column, text=HEADINGS[column])
             self.tree.column(column, width=WIDTHS[column],
                              anchor='w' if column in ('press', 'note') else 'e',
                              stretch=column == 'note')
-        scroll = ttk.Scrollbar(frame, command=self.tree.yview)
+        scroll = ctk.CTkScrollbar(frame, command=self.tree.yview, fg_color=theme.PANEL,
+                                  button_color=theme.PANEL_ALT, button_hover_color=theme.PANEL_HOVER)
         self.tree.configure(yscrollcommand=scroll.set)
         self.tree.pack(side='left', fill='both', expand=True)
         scroll.pack(side='right', fill='y')
         self.tree.bind('<Double-1>', self._on_double_click)
         self.tree.bind('<Delete>', lambda _e: self.delete())
 
-        buttons = ttk.Frame(self, padding=8)
-        buttons.pack(fill='x')
-        for text, command in [('▲ Up', lambda: self.move(-1)), ('▼ Down', lambda: self.move(1)),
+        buttons = ctk.CTkFrame(self, fg_color='transparent')
+        buttons.pack(fill='x', padx=12, pady=10)
+        for text, command in [('Up', lambda: self.move(-1)), ('Down', lambda: self.move(1)),
                               ('Insert', self.insert), ('Duplicate', self.duplicate),
                               ('Delete', self.delete), ('Merge repeats', self.merge)]:
-            ttk.Button(buttons, text=text, command=command).pack(side='left', padx=(0, 4))
-        ttk.Button(buttons, text='Close', command=self.close).pack(side='right')
-        ttk.Button(buttons, text='Save as…', command=self.save).pack(side='right', padx=4)
-        self.summary = ttk.Label(buttons)
+            _button(buttons, text, command).pack(side='left', padx=(0, 6))
+        _button(buttons, 'Close', self.close).pack(side='right')
+        _button(buttons, 'Save as', self.save, primary=True).pack(side='right', padx=6)
+        self.summary = ctk.CTkLabel(buttons, text='', font=theme.F['small'],
+                                    text_color=theme.TEXT_MUTED)
         self.summary.pack(side='right', padx=12)
 
     # -- display --------------------------------------------------------------
@@ -166,7 +186,9 @@ class SequenceEditor(tk.Toplevel):
         if not bbox:
             return
         x, y, width, height = bbox
-        entry = ttk.Entry(self.tree)
+        entry = tk.Entry(self.tree, bg=theme.PANEL_ALT, fg=theme.TEXT, insertbackground=theme.ACCENT,
+                         relief='flat', highlightthickness=1, highlightcolor=theme.ACCENT,
+                         highlightbackground=theme.BORDER, font=(theme.FAMILY['pixel'], -24))
         entry.insert(0, str(getattr(self.steps[index], column)))
         entry.select_range(0, 'end')
         entry.place(x=x, y=y, width=max(width, 80), height=height)
