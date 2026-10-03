@@ -21,7 +21,8 @@ A full video walkthrough is on my YouTube channel.
 These are unsigned `.exe` files, so Windows SmartScreen may show a warning ("Windows protected your PC"). Click **More info → Run anyway**. Some antivirus may also flag automation tools — this is normal.
 
 ## Experimental: no SwiCC (Bluetooth)
-[`bt_controller/`](bt_controller/README.md) turns a cheap USB Bluetooth adapter into a wireless Pro Controller driven from Python. It's a first step toward running the bot without a SwiCC. See its README for setup.
+- [`bt_controller/`](bt_controller/README.md) turns a cheap USB Bluetooth adapter into a wireless Pro Controller driven from Python.
+- [`shinybot/`](shinybot/README.md) uses it with a capture card to soft reset your starter until it's shiny.
 
 ## Links
 - YouTube: https://youtube.com/@alephzerogaming
