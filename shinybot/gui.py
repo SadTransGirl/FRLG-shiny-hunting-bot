@@ -24,7 +24,7 @@ from .keymap import InputState, apply_to_controller
 
 logger = logging.getLogger('shinybot.gui')
 
-PREVIEW_WIDTH = 640
+PREVIEW_WIDTH = 640  # at 100% display scaling; grows with Windows scaling
 SOFT_RESET = ('A', 'B', 'PLUS', 'MINUS')
 # Ignore a key release if the same key is pressed again within this many ms
 # (X11 sends release/press pairs for auto-repeat).
@@ -91,6 +91,8 @@ class App:
         self._drag_start: tuple[int, int] | None = None
         self._warned_no_input = False
 
+        # Match Windows display scaling (e.g. 150%) so the video isn't tiny next to the buttons.
+        self.preview_width = int(PREVIEW_WIDTH * max(1.0, root.winfo_fpixels('1i') / 96))
         self._build()
         logging.getLogger().addHandler(_UiLogHandler(self))
         root.protocol('WM_DELETE_WINDOW', self.close)
@@ -119,12 +121,14 @@ class App:
 
         body = ttk.Frame(root, padding=(8, 0))
         body.pack(fill='both', expand=True)
-        self.canvas = tk.Canvas(body, width=PREVIEW_WIDTH, height=360, bg='black',
+        self.canvas = tk.Canvas(body, width=self.preview_width, height=self.preview_width * 9 // 16,
+                                bg='black',
                                 highlightthickness=3, highlightbackground='#444',
                                 highlightcolor='#2a9d4b')
         self.canvas.grid(row=0, column=0, sticky='n')
         self._image_item = self.canvas.create_image(0, 0, anchor='nw')
-        self._canvas_text = self.canvas.create_text(PREVIEW_WIDTH // 2, 180, fill='white',
+        self._canvas_text = self.canvas.create_text(self.preview_width // 2,
+                                                    self.preview_width * 9 // 32, fill='white',
                                                     text='No camera')
         self.canvas.bind('<ButtonPress-1>', self._drag_begin)
         self.canvas.bind('<B1-Motion>', self._drag_move)
@@ -358,9 +362,9 @@ class App:
             return
         self._frame, self._frame_time = frame, frame_time
         height, width = frame.shape[:2]
-        self._scale = PREVIEW_WIDTH / width
+        self._scale = self.preview_width / width
         shown_height = round(height * self._scale)
-        small = cv2.resize(frame, (PREVIEW_WIDTH, shown_height), interpolation=cv2.INTER_AREA)
+        small = cv2.resize(frame, (self.preview_width, shown_height), interpolation=cv2.INTER_AREA)
         ok, ppm = cv2.imencode('.ppm', small)
         if not ok:
             return
