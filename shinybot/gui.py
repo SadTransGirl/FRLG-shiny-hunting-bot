@@ -18,6 +18,7 @@ from tkinter import messagebox, ttk
 import cv2
 
 from .app import OUTPUT_DIR, alert, open_controller, run_test_sequence, setup_logging
+from .audio import AudioPassthrough, guess_capture_device, list_inputs
 from .capture import FrameGrabber
 from .config import Config
 from .editor import SequenceEditor
@@ -94,6 +95,10 @@ class App:
         self._drag_start: tuple[int, int] | None = None
         self._warned_no_input = False
         self.recorder: Recorder | None = None
+        self.audio = AudioPassthrough()
+        self.audio.muted = config.audio_muted
+        self.audio.volume = config.audio_volume
+        self._audio_devices = []
         self._warned_stick_recording = False
 
         # Match Windows display scaling (e.g. 150%) so the video isn't tiny next to the buttons.
@@ -104,8 +109,9 @@ class App:
         root.bind_all('<KeyPress>', self._on_key_press)
         root.bind_all('<KeyRelease>', self._on_key_release)
         root.bind('<FocusOut>', lambda _e: root.after(50, self._check_focus))
-        root.after(30, self._tick)
+        self._tick_id = root.after(30, self._tick)
         self.open_camera()
+        self._init_audio()
 
     # -- layout ---------------------------------------------------------------
 
@@ -123,6 +129,26 @@ class App:
         self.camera_var = tk.IntVar(value=self.config.camera)
         ttk.Spinbox(top, from_=0, to=9, width=3, textvariable=self.camera_var).pack(side='left', padx=4)
         ttk.Button(top, text='Open', command=self.open_camera, takefocus=False).pack(side='left')
+
+        audio_row = ttk.Frame(root, padding=(8, 0, 8, 6))
+        audio_row.pack(fill='x')
+        ttk.Label(audio_row, text='Audio:').pack(side='left')
+        self.audio_var = tk.StringVar()
+        self.audio_box = ttk.Combobox(audio_row, textvariable=self.audio_var, state='readonly',
+                                      width=40, takefocus=False)
+        self.audio_box.pack(side='left', padx=4)
+        self.audio_box.bind('<<ComboboxSelected>>', lambda _e: self._choose_audio())
+        self.mute_button = tk.Button(audio_row, width=8, takefocus=False, command=self.toggle_mute)
+        self.mute_button.pack(side='left', padx=(4, 8))
+        self._mute_default_colors = {key: self.mute_button.cget(key)
+                                     for key in ('fg', 'bg', 'activebackground')}
+        ttk.Label(audio_row, text='Volume').pack(side='left')
+        self.volume_var = tk.DoubleVar(value=self.config.audio_volume * 100)
+        volume = ttk.Scale(audio_row, from_=0, to=100, length=140, variable=self.volume_var,
+                           command=lambda _v: self._set_volume(), takefocus=False)
+        volume.pack(side='left', padx=4)
+        volume.bind('<ButtonRelease-1>', lambda _e: self.config.save())
+        self._update_mute_button()
 
         body = ttk.Frame(root, padding=(8, 0))
         body.pack(fill='both', expand=True)
@@ -217,7 +243,7 @@ class App:
             self._ui_queue.get_nowait()()
         self._update_preview()
         self._update_status()
-        self.root.after(30, self._tick)
+        self._tick_id = self.root.after(30, self._tick)
 
     # -- controller -----------------------------------------------------------
 
@@ -400,6 +426,67 @@ class App:
             focused = None
         if focused is None:  # another application has focus
             self._release_all()
+
+    # -- audio ----------------------------------------------------------------
+
+    NO_AUDIO = '(off)'
+
+    def _init_audio(self) -> None:
+        try:
+            self._audio_devices = list_inputs()
+        except RuntimeError as error:
+            self.audio_box.configure(values=[self.NO_AUDIO])
+            self.audio_var.set(self.NO_AUDIO)
+            logger.warning('%s', error)
+            return
+        self.audio_box.configure(values=[self.NO_AUDIO] + [d.name for d in self._audio_devices])
+        saved = self.config.audio_device
+        if saved == self.NO_AUDIO:
+            self.audio_var.set(self.NO_AUDIO)
+            return
+        device = next((d for d in self._audio_devices if d.name == saved), None)
+        if device is None:
+            device = guess_capture_device(self._audio_devices)
+            if device:
+                logger.info('audio: guessed "%s" is the capture card; pick another in the '
+                            'Audio list if not', device.name)
+        self.audio_var.set(device.name if device else self.NO_AUDIO)
+        if device:
+            self._start_audio(device)
+
+    def _start_audio(self, device) -> None:
+        try:
+            self.audio.start(device)
+        except Exception as error:
+            logger.warning('audio: could not play "%s" (%s)', device.name, error)
+
+    def _choose_audio(self) -> None:
+        name = self.audio_var.get()
+        self.config.audio_device = name
+        self.config.save()
+        device = next((d for d in self._audio_devices if d.name == name), None)
+        if device is None:
+            self.audio.stop()
+            logger.info('audio off')
+        else:
+            self._start_audio(device)
+
+    def toggle_mute(self) -> None:
+        self.audio.muted = not self.audio.muted
+        self.config.audio_muted = self.audio.muted
+        self.config.save()
+        self._update_mute_button()
+
+    def _update_mute_button(self) -> None:
+        if self.audio.muted:
+            self.mute_button.configure(text='Unmute', fg='white', bg='#c0392b',
+                                       activebackground='#c0392b')
+        else:
+            self.mute_button.configure(text='Mute', **self._mute_default_colors)
+
+    def _set_volume(self) -> None:
+        self.audio.volume = self.volume_var.get() / 100
+        self.config.audio_volume = round(self.audio.volume, 2)
 
     # -- camera / preview -----------------------------------------------------
 
@@ -601,7 +688,9 @@ class App:
             pass
         if self.frames:
             self.frames.stop()
+        self.audio.stop()
         self.worker.stop()
+        self.root.after_cancel(self._tick_id)
         self.root.destroy()
 
 

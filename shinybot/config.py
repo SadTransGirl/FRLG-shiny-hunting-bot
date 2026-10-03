@@ -40,6 +40,10 @@ class Config:
         default_factory=lambda: {DEFAULT_SEQUENCE_NAME: copy.deepcopy(STARTER_SEQUENCE)})
     active_sequence: str = DEFAULT_SEQUENCE_NAME
     keys: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_KEYS))
+    # Capture card sound played through the PC (window only).
+    audio_device: str | None = None
+    audio_muted: bool = False
+    audio_volume: float = 1.0
 
     @property
     def sequence(self) -> list[Step]:

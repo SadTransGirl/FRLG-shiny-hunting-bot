@@ -1,3 +1,4 @@
 bumble>=0.0.235
 opencv-python>=4.8
 numpy>=1.26
+sounddevice>=0.4.6

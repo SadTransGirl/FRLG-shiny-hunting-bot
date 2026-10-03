@@ -12,6 +12,11 @@ In the window:
 - **Connect** reconnects to a paired Switch. **Pair…** pairs a new one (open
   Controllers → Change Grip/Order first).
 - The **video** shows the capture card. Pick the camera number at the top.
+- **Audio** plays the capture card's sound through your PC. Pick the capture
+  card's audio input in the list (it guesses the first time; it's often called
+  "Digital Audio Interface" or the card's name). **Mute** toggles the sound,
+  and you can set the volume. Choose "(off)" to disable audio. All of these are
+  remembered.
 - **Play from the PC:** click the on-screen buttons, or click the video and
   use the keyboard (the key list is shown in the window). Keys only reach the
   Switch while the window is focused, and everything is released when you
