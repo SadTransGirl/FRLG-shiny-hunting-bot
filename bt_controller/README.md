@@ -84,9 +84,8 @@ on the Switch (System Settings → Controllers and Sensors → Disconnect
 Controllers).
 
 ## Known limits
-- Not yet tested on a real Switch. The protocol is based on community reverse
-  engineering (dekuNukem's notes, joycontrol and NXBT, all proven on Linux),
-  but the first real pairing may need fixes.
+- Pairing has been tested on a Switch 1 with a CSR8510 adapter
+  (`00:1A:7D:...`). Other adapters and the Switch 2 are untested.
 - Motion controls, NFC and rumble are ignored.
 - Some adapters don't support everything Bumble needs. Cheap CSR8510-based and
   Realtek RTL8761B-based adapters are the usual safe picks.
