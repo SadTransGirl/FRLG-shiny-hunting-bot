@@ -33,8 +33,8 @@ class Step:
 # Starter soft reset for FireRed/LeafGreen. Before starting: text speed FAST,
 # saved in Oak's lab standing in front of the chosen Poke Ball, facing it.
 STARTER_SEQUENCE = [
-    Step('A+B+PLUS+MINUS', hold=0.5, wait=3.0, note='soft reset'),
-    Step('PLUS', wait=3.0, note='skip intro to title screen'),
+    Step('A+B+PLUS+MINUS', hold=0.5, wait=5.0, note='soft reset'),
+    Step('PLUS', wait=5.0, note='skip intro to title screen'),
     Step('PLUS', wait=2.5, note='title screen to main menu'),
     Step('A', wait=3.5, note='CONTINUE'),
     Step('B', wait=1.5, note='skip "previously on your quest" recap'),
