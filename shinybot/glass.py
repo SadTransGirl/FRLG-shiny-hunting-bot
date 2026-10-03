@@ -253,36 +253,48 @@ class GlassFrame(_Glass, tk.Canvas):
 
 
 class GlassLabel(_Glass, tk.Canvas):
-    """Text drawn over the backdrop (with a soft shadow so it reads on any picture)."""
+    """Text drawn over the backdrop (with a soft shadow so it reads on any picture).
+
+    With wrap=True the label takes no width of its own: pack it with fill='x' and
+    the text wraps to whatever width it is given, re-wrapping on resize.
+    """
 
     def __init__(self, master, text: str = '', font: str = 'body', color: str = theme.TEXT,
-                 wraplength: int | None = None, width: int | None = None, shadow: bool = True) -> None:
-        tk.Canvas.__init__(self, master, highlightthickness=0, bd=0, bg=theme.PANEL)
+                 wrap: bool = False, shadow: bool = True) -> None:
+        tk.Canvas.__init__(self, master, highlightthickness=0, bd=0, bg=theme.PANEL, width=1, height=1)
         self.page = master.page
         self._init_glass()
         self.page.register(self)
-        self.font = tkfont.Font(family=theme.FAMILY['pixel'] if font != 'mono' else theme.F['mono'].cget('family'),
-                                size=-self.S(theme.SIZES[font]))
-        self.wraplength = self.S(wraplength) if wraplength else None
-        self.fixed_width = self.S(width) if width else None
+        family = theme.F['mono'].cget('family') if font == 'mono' else theme.FAMILY['pixel']
+        self.font = tkfont.Font(family=family, size=-self.S(theme.SIZES[font]))
+        self.wrap = wrap
+        self._wrap_width = 0
         self.shadow = shadow
         offset = max(1, self.S(1))
-        self._shadow_item = self.create_text(offset, offset, anchor='nw', font=self.font,
-                                             fill='#04060c', width=self.wraplength or 0)
-        self._text_item = self.create_text(0, 0, anchor='nw', font=self.font, width=self.wraplength or 0)
+        self._shadow_item = self.create_text(offset, offset, anchor='nw', font=self.font, fill='#04060c')
+        self._text_item = self.create_text(0, 0, anchor='nw', font=self.font)
         self.text = ''
         self.color = color
+        if wrap:
+            self.bind('<Configure>', self._rewrap, add='+')
         self.set(text, color)
+
+    def _rewrap(self, event) -> None:
+        width = max(1, event.width - self.S(2))
+        if abs(width - self._wrap_width) > 1:
+            self._wrap_width = width
+            self.set()
 
     def set(self, text: str | None = None, color: str | None = None) -> None:
         if text is not None:
             self.text = text
         if color is not None:
             self.color = color
-        self.itemconfigure(self._text_item, text=self.text, fill=self.color)
-        self.itemconfigure(self._shadow_item, text=self.text if self.shadow else '')
+        wrap_width = self._wrap_width if self.wrap else 0
+        self.itemconfigure(self._text_item, text=self.text, fill=self.color, width=wrap_width)
+        self.itemconfigure(self._shadow_item, text=self.text if self.shadow else '', width=wrap_width)
         bbox = self.bbox(self._text_item) or (0, 0, 1, 1)
-        width = self.fixed_width or (bbox[2] - bbox[0] + self.S(2))
+        width = 1 if self.wrap else bbox[2] - bbox[0] + self.S(2)
         height = max(bbox[3] - bbox[1], self.font.metrics('linespace')) + self.S(2)
         # Track the size ourselves: cget() can return units like '10c' (Windows default).
         if getattr(self, '_size', None) != (width, height):

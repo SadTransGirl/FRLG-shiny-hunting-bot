@@ -31,7 +31,9 @@ from .recorder import Recorder
 
 logger = logging.getLogger('shinybot.gui')
 
-PREVIEW_WIDTH = 640  # before display scaling
+SIDE_WIDTH = 320  # px (before display scaling) of the Hunt page's right column
+DEFAULT_SIZE = (1200, 780)  # px before display scaling; capped to the screen
+MIN_SIZE = (900, 600)
 SOFT_RESET = ('A', 'B', 'PLUS', 'MINUS')
 # Ignore a key release if the same key is pressed again within this many ms
 # (X11 sends release/press pairs for auto-repeat).
@@ -97,14 +99,13 @@ class Row(GlassFrame):
 class Card(GlassFrame):
     """See-through rounded panel with an optional heading; put content in .body."""
 
-    def __init__(self, parent, title: str | None = None, hint: str | None = None,
-                 wraplength: int = 520) -> None:
+    def __init__(self, parent, title: str | None = None, hint: str | None = None) -> None:
         super().__init__(parent, tint=theme.PANEL, alpha=CARD_ALPHA, radius=theme.RADIUS,
                          border=theme.BORDER)
         if title:
             label(self, title, font='heading').pack(fill='x', padx=16, pady=(10, 0))
         if hint:
-            label(self, hint, muted=True, font='small', wraplength=wraplength).pack(fill='x', padx=16)
+            label(self, hint, muted=True, font='small', wrap=True).pack(fill='x', padx=16)
         self.body = Row(self)
         self.body.pack(fill='both', expand=True, padx=16, pady=(8, 14))
 
@@ -146,16 +147,40 @@ def pill(parent, text: str, command=None) -> ctk.CTkButton:
 
 
 class Video(GlassFrame):
-    """The capture card picture, on a canvas so boxes can be drawn over it."""
+    """The capture card picture, scaled to fit the space it is given.
 
-    def __init__(self, parent, width: int) -> None:
+    It is a canvas so the region boxes can be drawn over the picture.
+    """
+
+    def __init__(self, parent, on_resize=None) -> None:
         super().__init__(parent, tint=theme.SIDEBAR, alpha=0.85, radius=10)
-        self.canvas = tk.Canvas(self, width=width, height=width * 9 // 16, bg=theme.SIDEBAR,
-                                highlightthickness=0, bd=0)
-        self.canvas.pack(padx=self.S(6), pady=self.S(6))
+        self.configure(width=self.S(320), height=self.S(180))  # minimum; grows with the window
+        self.pack_propagate(False)
+        self.aspect = 16 / 9
+        self.view = (self.S(320), self.S(180))
+        self.on_resize = on_resize
+        self.canvas = tk.Canvas(self, bg=theme.SIDEBAR, highlightthickness=0, bd=0)
         self.image_item = self.canvas.create_image(0, 0, anchor='nw')
-        self.text_item = self.canvas.create_text(width // 2, width * 9 // 32, fill=theme.TEXT_MUTED,
-                                                 text='no camera', font=F('body'))
+        self.text_item = self.canvas.create_text(0, 0, fill=theme.TEXT_MUTED, text='no camera',
+                                                 font=F('body'))
+        self.bind('<Configure>', lambda _e: self.fit(), add='+')
+
+    def fit(self, aspect: float | None = None) -> None:
+        """Size the picture to the largest that fits, keeping the game's aspect ratio."""
+        if aspect:
+            self.aspect = aspect
+        pad = self.S(6)
+        avail_w = max(16, self.winfo_width() - 2 * pad)
+        avail_h = max(9, self.winfo_height() - 2 * pad)
+        width = min(avail_w, int(avail_h * self.aspect))
+        height = int(width / self.aspect)
+        if (width, height) == self.view and self.canvas.winfo_ismapped():
+            return
+        self.view = (width, height)
+        self.canvas.place(relx=0.5, rely=0.5, anchor='center', width=width, height=height)
+        self.canvas.coords(self.text_item, width // 2, height // 2)
+        if self.on_resize:
+            self.on_resize()
 
 
 class App:
@@ -188,8 +213,6 @@ class App:
         self.active_page = 'hunt'
 
         theme.init(root)
-        # The canvas isn't scaled by CustomTkinter, so follow Windows display scaling here.
-        self.preview_width = int(PREVIEW_WIDTH * ctk.ScalingTracker.get_window_scaling(root))
         self._build()
         logging.getLogger().addHandler(_UiLogHandler(self))
         root.protocol('WM_DELETE_WINDOW', self.close)
@@ -234,6 +257,7 @@ class App:
         self.nav_buttons = {}
         for key, text in PAGES:
             page = GlassPage(content, wallpaper)
+            page.configure(width=1, height=1)  # size comes from the window, not the content
             page.grid(row=0, column=0, sticky='nsew')
             inner = Row(page)  # page margins
             inner.pack(fill='both', expand=True, padx=16, pady=14)
@@ -247,132 +271,136 @@ class App:
             getattr(self, f'_build_{key}')(inner)
         self.select_page('hunt')
 
-    def _page_header(self, page, title: str, subtitle: str) -> None:
+    def _page_header(self, page, title: str, subtitle: str) -> Card:
+        """Slim banner: title and subtitle on one line over an accent rule."""
         header = Card(page)
-        header.pack(fill='x', pady=(0, 12))
         header.body.pack_configure(pady=header.S((4, 8)))
-        label(header.body, title, font='title').pack(fill='x')
-        label(header.body, subtitle, font='small', color=theme.ACCENT).pack(fill='x')
+        line = Row(header.body)
+        line.pack(fill='x')
+        label(line, title, font='heading').pack(side='left')
+        label(line, subtitle, font='small', color=theme.ACCENT).pack(side='left', padx=(14, 0), pady=(8, 0))
         ctk.CTkFrame(header.body, fg_color=theme.ACCENT, height=3, corner_radius=2).pack(
-            fill='x', pady=(6, 0))
+            fill='x', pady=(4, 0))
+        return header
+
+    @staticmethod
+    def _button_row(parent, buttons) -> Row:
+        """Buttons sharing a row equally: [(text, command, kind), ...]."""
+        row = Row(parent)
+        for column, (text, command, kind) in enumerate(buttons):
+            row.grid_columnconfigure(column, weight=1, uniform='buttons')
+            Btn(row, text, command, kind=kind, width=10).grid(
+                row=0, column=column, sticky='ew', padx=(0 if column == 0 else 6, 0))
+        return row
 
     def _build_hunt(self, page) -> None:
-        self._page_header(page, 'Hunt', 'soft reset, summary screen, shiny check, repeat')
-        row = Row(page)
-        row.pack(fill='x')
-        video_card = Card(row, 'Capture', 'Drag on the video after "Mark sprite/screen box".')
-        video_card.pack(side='left', fill='y', padx=(0, 12))
-        self.hunt_video = Video(video_card.body, self.preview_width)
-        self.hunt_video.pack()
+        page.grid_columnconfigure(0, weight=1)
+        page.grid_columnconfigure(1, minsize=page.S(SIDE_WIDTH))
+        page.grid_rowconfigure(1, weight=3)
+        page.grid_rowconfigure(2, weight=1, minsize=page.S(90))
+        self._page_header(page, 'Hunt', 'soft reset, summary screen, shiny check, repeat').grid(
+            row=0, column=0, columnspan=2, sticky='ew', pady=(0, 12))
+
+        video_card = Card(page, 'Capture', 'Drag on the video after Sprite box / Screen box.')
+        video_card.grid(row=1, column=0, sticky='nsew', padx=(0, 12))
+        self.hunt_video = Video(video_card.body, on_resize=self._video_resized)
+        self.hunt_video.pack(fill='both', expand=True)
         self.canvas = self.hunt_video.canvas
         self.canvas.bind('<ButtonPress-1>', self._drag_begin)
         self.canvas.bind('<B1-Motion>', self._drag_move)
         self.canvas.bind('<ButtonRelease-1>', self._drag_end)
 
-        side = Row(row)
-        side.pack(side='left', fill='both', expand=True)
-        hunt = Card(side, 'Shiny hunt')
+        log_card = Card(page)
+        log_card.grid(row=2, column=0, sticky='nsew', padx=(0, 12), pady=(12, 0))
+        log_card.body.pack_configure(pady=log_card.S((12, 12)))
+        self.log = ctk.CTkTextbox(log_card.body, font=F('mono'), fg_color=theme.SIDEBAR,
+                                  text_color=theme.TEXT, corner_radius=10, wrap='word', height=40)
+        self.log.pack(fill='both', expand=True)
+        self.log.configure(state='disabled')
+
+        side = Row(page)
+        side.grid(row=1, column=1, rowspan=2, sticky='nsew')
+        hunt = Card(side)
         hunt.pack(fill='x')
+        hunt.body.pack_configure(pady=hunt.S((14, 14)))
         stats = GlassFrame(hunt.body, tint=theme.PANEL_ALT, alpha=INNER_ALPHA, radius=10)
         stats.pack(fill='x', pady=(0, 10))
         label(stats, 'Resets', muted=True, font='small').pack(anchor='w', padx=14, pady=(8, 0))
         self.resets_label = label(stats, '0', font='big', color=theme.ACCENT)
         self.resets_label.pack(anchor='w', padx=14)
-        self.hunt_status = label(stats, 'not hunting', muted=True, font='small')
-        self.hunt_status.pack(anchor='w', padx=14, pady=(0, 8))
-        buttons = Row(hunt.body)
-        buttons.pack(fill='x')
-        Btn(buttons, 'Test sequence', self.test_sequence, width=150).pack(side='left', padx=(0, 6))
-        Btn(buttons, 'Start hunt', self.start_hunt, kind='primary', width=130).pack(side='left', padx=(0, 6))
-        Btn(buttons, 'Stop', self.stop_job, kind='danger', width=90).pack(side='left')
+        self.hunt_status = label(stats, 'not hunting', muted=True, font='small', wrap=True)
+        self.hunt_status.pack(fill='x', padx=14, pady=(0, 8))
+        self._button_row(hunt.body, [('Start hunt', self.start_hunt, 'primary'),
+                                     ('Stop', self.stop_job, 'danger')]).pack(fill='x')
 
-        sequence = Card(side, 'Sequence', 'The button presses for one reset.')
+        sequence = Card(side, 'Sequence')
         sequence.pack(fill='x', pady=(12, 0))
         self.sequence_var = tk.StringVar(value=self.config.active_sequence)
         self.sequence_box = option(sequence.body, self.sequence_var, list(self.config.sequences),
-                                   command=lambda _v: self._choose_sequence())
+                                   command=lambda _v: self._choose_sequence(), width=10)
         self.sequence_box.pack(fill='x', pady=(0, 8))
-        buttons = Row(sequence.body)
-        buttons.pack(fill='x')
-        self.record_button = Btn(buttons, 'Record', self.toggle_record, width=150)
-        self.record_button.pack(side='left', padx=(0, 6))
-        Btn(buttons, 'Edit', self.edit_sequence, width=100).pack(side='left')
-
-        regions = Card(side, 'Regions', 'With the summary screen showing.')
-        regions.pack(fill='x', pady=(12, 0))
-        buttons = Row(regions.body)
-        buttons.pack(fill='x')
-        Btn(buttons, 'Mark sprite box', lambda: self.mark_box('sprite'), width=170).pack(
-            side='left', padx=(0, 6))
-        Btn(buttons, 'Mark screen box', lambda: self.mark_box('screen'), width=170).pack(side='left')
-
-        log_card = Card(page, 'Log')
-        log_card.pack(fill='both', expand=True, pady=(12, 0))
-        self.log = ctk.CTkTextbox(log_card.body, font=F('mono'), fg_color=theme.SIDEBAR,
-                                  text_color=theme.TEXT, corner_radius=10, wrap='word', height=150)
-        self.log.pack(fill='both', expand=True)
-        self.log.configure(state='disabled')
+        row = self._button_row(sequence.body, [('Test', self.test_sequence, 'normal'),
+                                               ('Record', self.toggle_record, 'normal'),
+                                               ('Edit', self.edit_sequence, 'normal')])
+        row.pack(fill='x')
+        self.record_button = row.grid_slaves(row=0, column=1)[0]
+        label(sequence.body, 'Regions (on the summary screen)', muted=True, font='small',
+              wrap=True).pack(fill='x', pady=(10, 4))
+        self._button_row(sequence.body, [('Sprite box', lambda: self.mark_box('sprite'), 'normal'),
+                                         ('Screen box', lambda: self.mark_box('screen'), 'normal')]
+                         ).pack(fill='x')
 
     def _build_play(self, page) -> None:
-        self._page_header(page, 'Play', 'control the Switch from this window')
-        row = Row(page)
-        row.pack(fill='both', expand=True)
-        video_card = Card(row, 'Capture')
-        video_card.pack(side='left', fill='y', padx=(0, 12))
-        self.play_video = Video(video_card.body, self.preview_width)
-        self.play_video.pack()
+        page.grid_columnconfigure(0, weight=1)
+        page.grid_rowconfigure(1, weight=1)
+        self._page_header(page, 'Play', 'control the Switch from this window').grid(
+            row=0, column=0, columnspan=2, sticky='ew', pady=(0, 12))
+        video_card = Card(page, 'Capture')
+        video_card.grid(row=1, column=0, sticky='nsew', padx=(0, 12))
+        self.play_video = Video(video_card.body, on_resize=self._video_resized)
+        self.play_video.pack(fill='both', expand=True)
 
-        side = Row(row)
-        side.pack(side='left', fill='both', expand=True)
-        pad_card = Card(side, 'Controller', 'Click and hold, or use the keyboard.')
-        pad_card.pack(fill='x')
+        pad_card = Card(page, 'Controller', 'Click and hold, or use the keyboard.')
+        pad_card.grid(row=1, column=1, rowspan=2, sticky='nsew')
         pad = Row(pad_card.body)
         pad.pack()
         self.pad_buttons: dict[str, ctk.CTkButton] = {}
         for text, button, row_index, column, symbol in PAD_LAYOUT:
-            widget = ctk.CTkButton(pad, text=text, width=64 if len(text) < 3 else 84, height=40,
+            widget = ctk.CTkButton(pad, text=text, width=50 if len(text) < 3 else 76, height=38,
                                    corner_radius=10, font=F('symbol') if symbol else F('body'),
                                    fg_color=theme.PANEL_ALT, hover_color=theme.PANEL_HOVER,
                                    text_color=theme.TEXT)
-            widget.grid(row=row_index, column=column, padx=3, pady=3)
+            widget.grid(row=row_index, column=column, padx=2, pady=2)
             widget.bind('<ButtonPress-1>', lambda _e, b=button: self._pad(b, True), add='+')
             widget.bind('<ButtonRelease-1>', lambda _e, b=button: self._pad(b, False), add='+')
             self.pad_buttons[button] = widget
-        Btn(pad_card.body, 'Soft reset  (A+B+Start+Select)', self.soft_reset, height=36).pack(
+        self._button_row(pad_card.body, [('Soft reset', self.soft_reset, 'normal')]).pack(
             fill='x', pady=(10, 0))
 
-        keys_card = Card(side, 'Keyboard', 'Works while this window is focused.')
-        keys_card.pack(fill='x', pady=(12, 0))
+        keys_card = Card(page, 'Keyboard', 'Works while this window is focused.')
+        keys_card.grid(row=2, column=0, sticky='nsew', padx=(0, 12), pady=(12, 0))
         names = {'return': 'Enter', 'backspace': 'Bksp'}
-        entries = list(self.config.keys.items())
-        rows = (len(entries) + 2) // 3
-        for index, (key, target) in enumerate(entries):
-            row_frame = Row(keys_card.body)
-            row_frame.grid(row=index % rows, column=index // rows, sticky='w', padx=(0, 18))
-            ctk.CTkLabel(row_frame, text=names.get(key, key.capitalize()), font=F('small'), width=60,
-                         fg_color=theme.PANEL_ALT, corner_radius=6, text_color=theme.ACCENT).pack(
-                side='left', pady=1)
-            label(row_frame, target.replace('_', ' ').replace('LS', 'Stick'), font='small').pack(
-                side='left', padx=8)
+        # Non-breaking spaces keep each "key: button" pair on one line when the text wraps.
+        text = '    '.join(
+            f"{names.get(key, key.capitalize())}: {target.replace('_', ' ').replace('LS', 'Stick')}"
+            .replace(' ', '\u00a0') for key, target in self.config.keys.items())
+        label(keys_card.body, text, font='small', wrap=True).pack(fill='x')
 
     def _build_setup(self, page) -> None:
-        self._page_header(page, 'Setup', 'controller, capture card and sound')
-        grid = Row(page)
-        grid.pack(fill='both', expand=True)
-        grid.grid_columnconfigure((0, 1), weight=1, uniform='setup')
+        page.grid_columnconfigure((0, 1), weight=1, uniform='setup')
+        self._page_header(page, 'Setup', 'controller, capture card and sound').grid(
+            row=0, column=0, columnspan=2, sticky='ew', pady=(0, 12))
 
-        controller = Card(grid, 'Controller', 'The USB Bluetooth adapter pretends to be a Pro '
+        controller = Card(page, 'Controller', 'The USB Bluetooth adapter pretends to be a Pro '
                                               'Controller. Pair once, then Connect each session.')
-        controller.grid(row=0, column=0, sticky='nsew', padx=(0, 6), pady=(0, 12))
-        self.status = label(controller.body, 'not connected', muted=True)
+        controller.grid(row=1, column=0, sticky='nsew', padx=(0, 6), pady=(0, 12))
+        self.status = label(controller.body, 'not connected', muted=True, wrap=True)
         self.status.pack(fill='x', pady=(0, 8))
-        buttons = Row(controller.body)
-        buttons.pack(fill='x')
-        Btn(buttons, 'Connect', self.connect, kind='primary').pack(side='left', padx=(0, 6))
-        Btn(buttons, 'Pair', self.pair).pack(side='left')
+        self._button_row(controller.body, [('Connect', self.connect, 'primary'),
+                                           ('Pair', self.pair, 'normal')]).pack(fill='x')
 
-        camera = Card(grid, 'Capture card', 'If OBS has the card, close it or use its Virtual Camera.')
-        camera.grid(row=0, column=1, sticky='nsew', padx=(6, 0), pady=(0, 12))
+        camera = Card(page, 'Capture card', 'If OBS has the card, close it or use its Virtual Camera.')
+        camera.grid(row=1, column=1, sticky='nsew', padx=(6, 0), pady=(0, 12))
         row = Row(camera.body)
         row.pack(fill='x')
         label(row, 'Camera').pack(side='left', padx=(0, 8))
@@ -380,12 +408,12 @@ class App:
         option(row, self.camera_var, [str(i) for i in range(10)], width=80).pack(side='left')
         Btn(row, 'Open', self.open_camera, width=90).pack(side='left', padx=8)
 
-        audio = Card(grid, 'Sound', 'Plays the capture card through your speakers. '
+        audio = Card(page, 'Sound', 'Plays the capture card through your speakers. '
                                     'Muting only affects this PC.')
-        audio.grid(row=1, column=0, sticky='nsew', padx=(0, 6), pady=(0, 12))
+        audio.grid(row=2, column=0, sticky='nsew', padx=(0, 6))
         self.audio_var = tk.StringVar(value=self.NO_AUDIO)
         self.audio_box = option(audio.body, self.audio_var, [self.NO_AUDIO],
-                                command=lambda _v: self._choose_audio(), width=380)
+                                command=lambda _v: self._choose_audio(), width=10)
         self.audio_box.pack(fill='x', pady=(0, 10))
         row = Row(audio.body)
         row.pack(fill='x')
@@ -399,28 +427,22 @@ class App:
         label(row, 'Mute').pack(side='left', padx=(0, 16))
         label(row, 'Volume', muted=True).pack(side='left', padx=(0, 8))
         self.volume_var = tk.DoubleVar(value=self.config.audio_volume * 100)
-        volume = ctk.CTkSlider(row, from_=0, to=100, variable=self.volume_var, width=160,
+        volume = ctk.CTkSlider(row, from_=0, to=100, variable=self.volume_var, width=80,
                                command=lambda _v: self._set_volume(), progress_color=theme.ACCENT,
                                button_color=theme.ACCENT, button_hover_color=theme.ACCENT_HOVER,
                                fg_color=theme.PANEL_ALT)
-        volume.pack(side='left')
+        volume.pack(side='left', fill='x', expand=True)
         volume.bind('<ButtonRelease-1>', lambda _e: self.config.save(), add='+')
 
-        look = Card(grid, 'Background')
-        look.grid(row=1, column=1, sticky='nsew', padx=(6, 0), pady=(0, 12))
-        label(look.body, 'Any picture works; it is darkened behind the panels.', muted=True,
-              font='small', wraplength=420).pack(fill='x', pady=(0, 8))
-        buttons = Row(look.body)
-        buttons.pack(fill='x')
-        Btn(buttons, 'Choose picture', self.choose_background, width=170).pack(side='left', padx=(0, 6))
-        Btn(buttons, 'Default', lambda: self.set_background(None), width=110).pack(side='left')
-
-        about = Card(grid, 'About')
-        about.grid(row=2, column=0, columnspan=2, sticky='nsew')
-        label(about.body, 'Font: "Pokemon Pixel Font" by SpyroSteak (CC BY-SA). '
-                          'Settings, screenshots and logs:', muted=True, font='small',
-              wraplength=900).pack(fill='x')
-        label(about.body, 'shinybot.json   shinybot_output\\', muted=True, font='mono').pack(
+        look = Card(page, 'Background', 'Any picture works; it is darkened behind the panels.')
+        look.grid(row=2, column=1, sticky='nsew', padx=(6, 0))
+        self._button_row(look.body, [('Choose picture', self.choose_background, 'normal'),
+                                     ('Default', lambda: self.set_background(None), 'normal')]
+                         ).pack(fill='x')
+        label(look.body, 'Font: "Pokemon Pixel Font" by SpyroSteak (CC BY-SA). '
+                         'Settings, screenshots and logs:', muted=True, font='small',
+              wrap=True).pack(fill='x', pady=(12, 0))
+        label(look.body, 'shinybot.json   shinybot_output\\', muted=True, font='mono').pack(
             fill='x', pady=(4, 0))
 
     def choose_background(self) -> None:
@@ -771,6 +793,9 @@ class App:
     def _visible_video(self) -> Video | None:
         return {'hunt': self.hunt_video, 'play': self.play_video}.get(self.active_page)
 
+    def _video_resized(self) -> None:
+        self._frame_time = 0.0  # redraw at the new size
+
     def _update_preview(self) -> None:
         video = self._visible_video()
         if not self.frames or video is None:
@@ -780,17 +805,17 @@ class App:
             return
         self._frame, self._frame_time = frame, frame_time
         height, width = frame.shape[:2]
-        self._scale = self.preview_width / width
-        shown_height = round(height * self._scale)
-        small = cv2.resize(frame, (self.preview_width, shown_height), interpolation=cv2.INTER_AREA)
+        if abs(video.aspect - width / height) > 0.01:
+            video.fit(width / height)
+        view_w, view_h = video.view
+        small = cv2.resize(frame, (view_w, view_h), interpolation=cv2.INTER_AREA)
         ok, ppm = cv2.imencode('.ppm', small)
         if not ok:
             return
         self._photo = tk.PhotoImage(data=ppm.tobytes(), format='PPM')
         video.canvas.itemconfigure(video.image_item, image=self._photo)
-        if video.canvas.winfo_reqheight() != shown_height:
-            video.canvas.configure(height=shown_height)
         if video is self.hunt_video:
+            self._scale = view_w / width
             self._draw_boxes()
 
     def _draw_boxes(self) -> None:
@@ -953,8 +978,20 @@ def main(camera: int | None = None) -> None:
         config.camera = camera
     root = ctk.CTk(fg_color=theme.BG)
     root.title('Shiny Bot - FireRed / LeafGreen')
+    fit_to_screen(root)
     App(root, config)
     root.mainloop()
+
+
+def fit_to_screen(root) -> None:
+    """Default window size, never larger than ~90% of the screen."""
+    scaling = ctk.ScalingTracker.get_window_scaling(root)
+    screen_w = root.winfo_screenwidth() / scaling  # CustomTkinter sizes are before scaling
+    screen_h = root.winfo_screenheight() / scaling
+    width = int(min(DEFAULT_SIZE[0], screen_w * 0.9))
+    height = int(min(DEFAULT_SIZE[1], screen_h * 0.85))
+    root.geometry(f'{width}x{height}+{int((screen_w - width) / 2)}+{int((screen_h - height) / 3)}')
+    root.minsize(min(MIN_SIZE[0], width), min(MIN_SIZE[1], height))
 
 
 if __name__ == '__main__':
