@@ -11,6 +11,7 @@ import logging
 import queue
 import sys
 import threading
+import time
 import tkinter as tk
 from tkinter import messagebox, ttk
 
@@ -19,8 +20,10 @@ import cv2
 from .app import OUTPUT_DIR, alert, open_controller, run_test_sequence, setup_logging
 from .capture import FrameGrabber
 from .config import Config
+from .editor import SequenceEditor
 from .hunt import SETUP_FRAME, Hunter, HuntStopped
 from .keymap import InputState, apply_to_controller
+from .recorder import Recorder
 
 logger = logging.getLogger('shinybot.gui')
 
@@ -90,6 +93,8 @@ class App:
         self._box_mode: str | None = None
         self._drag_start: tuple[int, int] | None = None
         self._warned_no_input = False
+        self.recorder: Recorder | None = None
+        self._warned_stick_recording = False
 
         # Match Windows display scaling (e.g. 150%) so the video isn't tiny next to the buttons.
         self.preview_width = int(PREVIEW_WIDTH * max(1.0, root.winfo_fpixels('1i') / 96))
@@ -161,6 +166,24 @@ class App:
 
         hunt = ttk.LabelFrame(root, text='Shiny hunt', padding=(8, 6))
         hunt.pack(fill='x', padx=8, pady=6)
+        sequence_row = ttk.Frame(hunt)
+        sequence_row.pack(fill='x', pady=(0, 6))
+        ttk.Label(sequence_row, text='Sequence:').pack(side='left')
+        self.sequence_var = tk.StringVar(value=self.config.active_sequence)
+        self.sequence_box = ttk.Combobox(sequence_row, textvariable=self.sequence_var,
+                                         state='readonly', width=28, takefocus=False)
+        self.sequence_box.pack(side='left', padx=4)
+        self.sequence_box.bind('<<ComboboxSelected>>', lambda _e: self._choose_sequence())
+        self.record_button = tk.Button(sequence_row, text='● Record', fg='#c0392b',
+                                       takefocus=False, command=self.toggle_record)
+        self.record_button.pack(side='left', padx=(8, 4))
+        self._record_default_bg = self.record_button.cget('background')
+        ttk.Button(sequence_row, text='Edit…', command=self.edit_sequence,
+                   takefocus=False).pack(side='left')
+        self._refresh_sequences()
+        actions = ttk.Frame(hunt)
+        actions.pack(fill='x')
+        hunt = actions
         for text, command in [('Test sequence', self.test_sequence),
                               ('Mark sprite box', lambda: self.mark_box('sprite')),
                               ('Mark screen box', lambda: self.mark_box('screen')),
@@ -258,6 +281,11 @@ class App:
             return
         self._warned_no_input = False
         self.worker.call(apply_to_controller, self.controller, buttons, stick)
+        if self.recorder:
+            self.recorder.update(buttons)
+            if stick != (0.0, 0.0) and not self._warned_stick_recording:
+                self._warned_stick_recording = True
+                logger.warning('stick movements are not recorded; use the D-pad (arrow keys)')
 
     def _release_all(self) -> None:
         for after_id in self._pending_release.values():
@@ -276,7 +304,62 @@ class App:
         if not self._manual_allowed():
             logger.info('soft reset ignored: controller not connected or bot in control')
             return
-        self.worker.submit(self.controller.press(*SOFT_RESET, duration=0.5))
+        # Held like any other input, so it shows on the pad and gets recorded.
+        for button in SOFT_RESET:
+            self.input.press(f'softreset:{button}', button)
+        self._apply_input()
+
+        def release():
+            for button in SOFT_RESET:
+                self.input.release(f'softreset:{button}')
+            self._apply_input()
+        self.root.after(500, release)
+
+    # -- sequences: choose, record, edit --------------------------------------
+
+    def _refresh_sequences(self) -> None:
+        self.sequence_box.configure(values=list(self.config.sequences))
+        self.sequence_var.set(self.config.active_sequence)
+
+    def _choose_sequence(self) -> None:
+        self.config.active_sequence = self.sequence_var.get()
+        self.config.save()
+        logger.info('using sequence "%s"', self.config.active_sequence)
+
+    def _save_sequence(self, name: str, steps) -> None:
+        self.config.sequences[name] = steps
+        self.config.active_sequence = name
+        self.config.save()
+        self._refresh_sequences()
+        logger.info('saved sequence "%s" (%d steps); it is now the active sequence', name, len(steps))
+
+    def toggle_record(self) -> None:
+        if self.recorder:
+            steps = self.recorder.stop()
+            self.recorder = None
+            self.record_button.configure(text='● Record', fg='#c0392b',
+                                         background=self._record_default_bg)
+            if not steps:
+                logger.info('recording stopped: nothing was pressed')
+                return
+            logger.info('recording stopped: %d presses. Add notes, then Save as…', len(steps))
+            SequenceEditor(self.root, f'Recorded {time.strftime("%H-%M")}', steps,
+                           on_save=self._save_sequence)
+            return
+        if not self._manual_allowed():
+            messagebox.showinfo('Record', 'Connect the controller first (and stop any test or hunt).')
+            return
+        self._release_all()
+        self.recorder = Recorder()
+        self._warned_stick_recording = False
+        self.record_button.configure(text='■ Stop recording', fg='white', background='#c0392b')
+        self.canvas.focus_set()
+        logger.info('recording: play the sequence with the keyboard or the buttons, from the soft '
+                    'reset to the summary screen, then press Stop recording')
+
+    def edit_sequence(self) -> None:
+        SequenceEditor(self.root, self.config.active_sequence, self.config.sequence,
+                       on_save=self._save_sequence)
 
     # -- keyboard -------------------------------------------------------------
 
@@ -432,6 +515,9 @@ class App:
     # -- bot jobs -------------------------------------------------------------
 
     def _start_job(self, name: str, make_coro, on_done=None) -> bool:
+        if self.recorder:
+            messagebox.showinfo('Recording', 'Stop recording first.')
+            return False
         if self.job:
             messagebox.showinfo('Busy', f'Already running: {self.job[0]}. Press Stop first.')
             return False

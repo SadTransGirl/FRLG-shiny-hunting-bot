@@ -24,6 +24,27 @@ In the window:
   no restart needed.
 - Keyboard bindings can be changed in `shinybot.json` under `"keys"`.
 
+### Recording a sequence (no guessing timings)
+1. Get the game where the sequence starts. For the starter, that's in the lab
+   right after saving.
+2. Click **● Record**, then play it yourself with the keyboard or the
+   on-screen buttons: Soft reset, intro, title, Continue, take the Pokémon,
+   decline the nickname, then open the menu, the Pokémon and its Summary.
+3. Once the summary screen is fully showing, click **■ Stop recording**.
+4. The editor opens with one row per press: buttons, how long you held them,
+   and the wait until your next press. The last wait is the time until you
+   clicked Stop. Double-click any cell to change it and add a **note** to each
+   input (Tab jumps to the next cell). **Merge repeats** turns mashing (e.g.
+   12 x B) into one row. Then **Save as…** with a name like "Eevee".
+5. The saved sequence becomes the active one in the **Sequence** dropdown.
+   **Test sequence** and **Start hunt** use whichever is selected, and
+   **Edit…** opens it again.
+
+Tips: press one button at a time (buttons pressed together are recorded as a
+chord, which is how the soft reset is recorded). Stick movements aren't
+recorded, so use the D-pad. If a step is flaky when replayed, add a little
+to its wait.
+
 The rest of this page describes the same steps on the command line.
 
 ## Before you start

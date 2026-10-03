@@ -89,8 +89,8 @@ class FakeFrames:
 
 def make_hunter(tmp_path, frames, **config_changes):
     config = Config(sprite_box=SPRITE_BOX, screen_box=SCREEN_BOX,
-                    sequence=[Step('A+B+PLUS+MINUS', wait=0), Step('A', wait=0, repeat=2)],
-                    **config_changes)
+                    sequences={'test': [Step('A+B+PLUS+MINUS', wait=0), Step('A', wait=0, repeat=2)]},
+                    active_sequence='test', **config_changes)
     return Hunter(FakeController(), FakeFrames(frames), config, tmp_path)
 
 
@@ -152,3 +152,20 @@ def test_subtle_palette_shift_is_detected_despite_noisy_capture():
     subtle = (NORMAL[0] + 22, NORMAL[1] + 18, NORMAL[2] - 20)
     assert all(detector.check(noisy(NORMAL)).verdict == 'normal' for _ in range(20))
     assert detector.check(noisy(subtle)).verdict == 'shiny'
+
+
+def test_old_single_sequence_config_is_migrated(tmp_path):
+    path = tmp_path / 'shinybot.json'
+    path.write_text(json.dumps({'camera': 1, 'sequence': [{'press': 'A', 'wait': 9.0}]}))
+    config = Config.load(path)
+    assert config.camera == 1
+    assert config.active_sequence == 'Starter'
+    assert config.sequence == [Step('A', wait=9.0)]
+    config.save(path)
+    assert 'sequence' not in json.loads(path.read_text())
+
+
+def test_default_sequences_are_independent_copies():
+    a, b = Config(), Config()
+    a.sequence[0].wait = 99
+    assert b.sequence[0].wait != 99
