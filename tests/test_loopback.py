@@ -71,6 +71,10 @@ async def test_switch_handshake_and_button_press(tmp_path):
     await switch.hid.connect_interrupt_channel()
     await asyncio.wait_for(ctl.wait_connected(), 2)
 
+    # Before the Switch says anything, the controller only sends empty reports.
+    first = await asyncio.wait_for(switch.reports.get(), 2)
+    assert first == b'\xa1' + bytes(49)
+
     # Like the real Switch, look up the Device ID record first.
     async with sdp.Client(switch.hid.connection) as sdp_client:
         records = await sdp_client.search_attributes(

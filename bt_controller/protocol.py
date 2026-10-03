@@ -12,7 +12,6 @@ Report layout used here is the HID payload *without* the 1-byte HIDP header
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -60,7 +59,7 @@ SUBCOMMAND_NAMES = {
 
 CONTROLLER_TYPE_PRO = 0x03
 FIRMWARE_VERSION = (0x03, 0x8B)
-BATTERY_AND_CONNECTION = 0x90  # battery full, Pro Controller connection info
+BATTERY_AND_CONNECTION = 0x8E  # battery full + connection info, as joycontrol sends
 
 # Button name -> (byte offset within the 3 button bytes, bit mask)
 BUTTONS: dict[str, tuple[int, int]] = {
@@ -169,24 +168,30 @@ class SwitchProtocol:
         self.player_lights = 0
         self.vibration_enabled = False
         self.imu_enabled = False
-        self._start = time.monotonic()
+        self._timer = 0
 
     # -- input reports --------------------------------------------------------
-
-    def _timer(self) -> int:
-        # Free-running counter; real controllers tick roughly every 5 ms.
-        return int((time.monotonic() - self._start) * 200) & 0xFF
 
     def _standard_header(self, report_id: int) -> bytearray:
         report = bytearray(INPUT_REPORT_SIZE)
         report[0] = report_id
-        report[1] = self._timer()
+        report[1] = self._timer
+        self._timer = (self._timer + 1) & 0xFF
         report[2] = BATTERY_AND_CONNECTION
         report[3:6] = self.state.button_bytes()
         report[6:9] = pack_12bit_pair(*self.state.left_stick)
         report[9:12] = pack_12bit_pair(*self.state.right_stick)
         report[12] = 0x80  # vibrator input report
         return report
+
+    def reset_session(self) -> None:
+        """Forget per-connection state before a new setup handshake."""
+        self.input_mode = None
+        self.player_lights = 0
+
+    def empty_report(self) -> bytes:
+        """All-zero report sent once a second until the Switch starts talking."""
+        return bytes(INPUT_REPORT_SIZE)
 
     def full_report(self) -> bytes:
         """Standard full-mode (0x30) input report; IMU data is left zeroed."""

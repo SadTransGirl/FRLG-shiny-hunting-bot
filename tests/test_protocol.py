@@ -91,5 +91,17 @@ def test_unknown_subcommand_gets_ack(proto):
     assert reply[13:15] == bytes([0x80, 0x77])
 
 
+def test_timer_counts_reports(proto):
+    timers = [proto.full_report()[1] for _ in range(3)]
+    assert timers == [timers[0], timers[0] + 1, timers[0] + 2]
+
+
+def test_reset_session_clears_handshake(proto):
+    proto.handle_output_report(subcommand(0x03, b'\x30'))
+    proto.handle_output_report(subcommand(0x30, b'\x01'))
+    proto.reset_session()
+    assert proto.input_mode is None and not proto.paired
+
+
 def test_rumble_only_needs_no_reply(proto):
     assert proto.handle_output_report(bytes([0x10, 0x01]) + bytes(8)) is None

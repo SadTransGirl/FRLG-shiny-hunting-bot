@@ -225,7 +225,7 @@ class ProController:
         self,
         transport: str = 'usb:0',
         keystore_path: str | Path = 'switch_pairing.json',
-        report_rate: float = 60.0,
+        report_rate: float = 66.0,
     ) -> None:
         self.transport_spec = transport
         self.keystore_path = Path(keystore_path)
@@ -237,6 +237,8 @@ class ProController:
         self._report_task: asyncio.Task | None = None
         self._connected = asyncio.Event()
         self._ready = asyncio.Event()
+        self._heard_from_switch = False  # any output report on this connection yet?
+        self._skip_next_report = False  # a subcommand reply took this report slot
         self._windows_timer = False
 
     # -- setup ----------------------------------------------------------------
@@ -427,6 +429,9 @@ class ProController:
         if self.hid and self.hid.l2cap_ctrl_channel and self.hid.l2cap_intr_channel:
             if not self._connected.is_set():
                 logger.info('HID channels open')
+                # The Switch redoes the setup handshake on every connection.
+                self.protocol.reset_session()
+                self._heard_from_switch = False
             self._connected.set()
         else:
             self._connected.clear()
@@ -436,9 +441,11 @@ class ProController:
         if not pdu or pdu[0] != 0xA2:  # HIDP DATA | OUTPUT
             logger.debug('ignoring interrupt PDU %s', pdu.hex())
             return
+        self._heard_from_switch = True
         reply = self.protocol.handle_output_report(pdu[1:])
         if reply is not None:
             self._send(reply)
+            self._skip_next_report = True
         if self.protocol.paired:
             self._ready.set()
 
@@ -458,12 +465,23 @@ class ProController:
             if not self._connected.is_set():
                 await self._connected.wait()
                 next_time = loop.time()
-            # Until the Switch selects full mode, send reports slowly.
-            full_mode = self.protocol.input_mode == REPORT_FULL
-            period = 1 / self.report_rate if full_mode else 1 / 15
-            if not self._congested():
+            # Like a real controller (and joycontrol): an empty report once a
+            # second until the Switch speaks, then only subcommand replies until
+            # it selects full mode, then full reports at report_rate.
+            report = None
+            if self.protocol.input_mode == REPORT_FULL:
+                period = 1 / self.report_rate
+                if not self._skip_next_report and not self._congested():
+                    report = self.protocol.full_report()
+            elif not self._heard_from_switch:
+                period = 1.0
+                report = self.protocol.empty_report()
+            else:
+                period = 1 / self.report_rate
+            self._skip_next_report = False
+            if report is not None:
                 try:
-                    self._send(self.protocol.full_report())
+                    self._send(report)
                 except Exception:
                     logger.debug('report send failed', exc_info=True)
             next_time += period
