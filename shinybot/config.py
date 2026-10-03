@@ -44,6 +44,7 @@ class Config:
     audio_device: str | None = None
     audio_muted: bool = False
     audio_volume: float = 1.0
+    background: str | None = None  # picture behind the window; None = the bundled one
 
     @property
     def sequence(self) -> list[Step]:

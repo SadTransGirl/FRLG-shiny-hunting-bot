@@ -13,7 +13,9 @@ sequences and regions, log), **Play** (video, on-screen controller, key list)
 and **Setup** (connect/pair the controller, camera, sound). The pills in the
 top bar show the controller, camera and sound status; click **Sound** to
 mute/unmute from any page. Text uses "Pokemon Pixel Font" by SpyroSteak
-(CC BY-SA).
+(CC BY-SA). The panels are see-through over a background picture; change it on
+the Setup page (**Choose picture** / **Default**). The default is
+`shinybot/assets/background.jpg`.
 
 In the window:
 - **Connect** reconnects to a paired Switch. **Pair…** pairs a new one (open

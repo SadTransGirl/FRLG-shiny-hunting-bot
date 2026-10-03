@@ -24,6 +24,7 @@ ICON_PNG = ASSETS / 'icon.png'
 ICON_ICO = ASSETS / 'icon.ico'
 PIXEL_FONT = ASSETS / 'fonts' / 'pokemon_pixel_font.ttf'
 PIXEL_FAMILY = 'Pokemon Pixel Font'
+BACKGROUND = ASSETS / 'background.jpg'
 APP_ID = 'FRLGShinyBot.Hunter'
 
 # ---- palette: night-blue panels, Eevee gold accent ------------------------
@@ -46,6 +47,7 @@ WARNING = '#e8b23f'
 RADIUS = 12
 
 F: dict[str, ctk.CTkFont] = {}
+SIZES: dict[str, int] = {}  # font sizes in px before display scaling
 FAMILY = {'pixel': 'Segoe UI', 'symbol': 'Segoe UI Symbol'}
 
 
@@ -82,17 +84,11 @@ def init(root) -> None:
     FAMILY['symbol'] = 'Segoe UI Symbol' if sys.platform == 'win32' else 'DejaVu Sans'
     # The pixel font is drawn on a grid: sizes in steps of 8 px stay crisp.
     size = (lambda px: px) if pixel else (lambda px: int(px * 0.7))
-    F.update(
-        body=ctk.CTkFont(FAMILY['pixel'], size(24)),
-        small=ctk.CTkFont(FAMILY['pixel'], size(20)),
-        button=ctk.CTkFont(FAMILY['pixel'], size(24)),
-        nav=ctk.CTkFont(FAMILY['pixel'], size(24)),
-        heading=ctk.CTkFont(FAMILY['pixel'], size(32)),
-        title=ctk.CTkFont(FAMILY['pixel'], size(40)),
-        big=ctk.CTkFont(FAMILY['pixel'], size(64)),
-        symbol=ctk.CTkFont(FAMILY['symbol'], 16),
-        mono=ctk.CTkFont('Consolas' if sys.platform == 'win32' else 'DejaVu Sans Mono', 12),
-    )
+    SIZES.update(body=size(24), small=size(20), button=size(24), nav=size(24), heading=size(32),
+                 title=size(40), big=size(64), mono=13)
+    F.update({name: ctk.CTkFont(FAMILY['pixel'], px) for name, px in SIZES.items() if name != 'mono'})
+    F['symbol'] = ctk.CTkFont(FAMILY['symbol'], 16)
+    F['mono'] = ctk.CTkFont('Consolas' if sys.platform == 'win32' else 'DejaVu Sans Mono', SIZES['mono'])
     _ttk_styles(root)
     set_icon(root)
 
@@ -110,6 +106,17 @@ def _ttk_styles(root) -> None:
     style.map('Treeview', background=[('selected', ACCENT_DIM)], foreground=[('selected', ACCENT)])
     style.map('Treeview.Heading', background=[('active', PANEL_HOVER)])
     style.layout('Treeview', [('Treeview.treearea', {'sticky': 'nswe'})])
+
+
+def load_background(path: str | None = None) -> Image.Image | None:
+    """The wallpaper behind the pages (None = plain colour)."""
+    for candidate in (path, BACKGROUND):
+        if candidate and Path(candidate).exists():
+            try:
+                return Image.open(candidate).convert('RGB')
+            except OSError:
+                pass
+    return None
 
 
 def set_icon(window) -> None:
