@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+switch_pairing.json
+bt_controller.log
