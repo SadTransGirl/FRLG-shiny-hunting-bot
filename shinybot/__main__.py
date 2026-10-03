@@ -5,57 +5,24 @@
     python -m shinybot test-sequence   run one reset, screenshotting every step
     python -m shinybot setup           mark the sprite and screen regions
     python -m shinybot hunt            start hunting
+    python -m shinybot gui             open the window (controller pad + hunt buttons)
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import logging
 import sys
-from pathlib import Path
 
 import cv2
 
-from bt_controller import ProController
-
+from .app import OUTPUT_DIR, alert, connect_controller, run_test_sequence, setup_logging
 from .capture import FrameGrabber, list_cameras
 from .config import CONFIG_FILE, Config
 from .hunt import SETUP_FRAME, Hunter, HuntStopped
-from .sequence import run_steps, sequence_duration
+from .sequence import sequence_duration
 
-OUTPUT_DIR = Path('shinybot_output')
-KEYS_FILE = 'switch_pairing.json'
 MAX_WINDOW_WIDTH = 1280
-
-logger = logging.getLogger('shinybot')
-
-
-def setup_logging() -> None:
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    root = logging.getLogger()
-    root.setLevel(logging.INFO)
-    file_handler = logging.FileHandler(OUTPUT_DIR / 'hunt.log', encoding='utf-8')
-    file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s'))
-    console = logging.StreamHandler()
-    console.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
-    console.addFilter(lambda r: r.name.startswith(('shinybot', 'bt_controller')))
-    root.addHandler(file_handler)
-    root.addHandler(console)
-
-
-async def connect_controller(config: Config) -> ProController:
-    controller = ProController(config.transport, KEYS_FILE)
-    await controller.open()
-    try:
-        await controller.reconnect()
-    except Exception as error:
-        await controller.close()
-        raise RuntimeError(
-            f'could not connect to the Switch ({error}). Make sure it is awake; if it was never '
-            'paired, run "python -m bt_controller pair" first.'
-        ) from error
-    return controller
 
 
 def _scaled(frame):
@@ -126,35 +93,14 @@ def cmd_setup(config: Config) -> None:
 
 
 async def cmd_test_sequence(config: Config) -> None:
-    folder = OUTPUT_DIR / 'test_sequence'
-    folder.mkdir(parents=True, exist_ok=True)
-    for old in folder.glob('*.png'):
-        old.unlink()
     controller = await connect_controller(config)
     try:
         with FrameGrabber(config.camera, *config.frame_size) as frames:
-            async def screenshot(index, step):
-                name = f'{index + 1:02d}_{step.note or step.press}'.replace(' ', '_')
-                name = ''.join(c for c in name if c.isalnum() or c in '_-+')
-                cv2.imwrite(str(folder / f'{name}.png'), await asyncio.to_thread(frames.latest))
-                print(f'  step {index + 1}: {step.press} x{step.repeat} ({step.note})')
-            print(f'Running the sequence once (~{sequence_duration(config.sequence):.0f}s)...')
-            await run_steps(controller, config.sequence, on_step=screenshot)
-        print(f'Done. Screenshots after each step are in {folder}. If a step lands on the wrong '
-              f'screen, change its "wait" or "repeat" in {CONFIG_FILE} and try again.')
+            await run_test_sequence(controller, frames, config)
+        print(f'If a step lands on the wrong screen, change its "wait" or "repeat" in '
+              f'{CONFIG_FILE} and try again.')
     finally:
         await controller.close()
-
-
-async def alert() -> None:
-    if sys.platform == 'win32':
-        import winsound
-
-        for _ in range(5):
-            await asyncio.to_thread(winsound.Beep, 1200, 300)
-            await asyncio.sleep(0.2)
-    else:
-        print('\a')
 
 
 async def cmd_hunt(config: Config) -> None:
@@ -180,9 +126,15 @@ async def cmd_hunt(config: Config) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(prog='python -m shinybot', description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('command', choices=['cameras', 'preview', 'setup', 'test-sequence', 'hunt'])
+    parser.add_argument('command',
+                        choices=['cameras', 'preview', 'setup', 'test-sequence', 'hunt', 'gui'])
     parser.add_argument('--camera', type=int, help='capture device number (saved to the config)')
     args = parser.parse_args()
+    if args.command == 'gui':
+        from .gui import main as gui_main
+
+        gui_main(camera=args.camera)
+        return
 
     setup_logging()
     config = Config.load()

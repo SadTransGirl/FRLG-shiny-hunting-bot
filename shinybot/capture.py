@@ -86,6 +86,11 @@ class FrameGrabber:
                 raise RuntimeError(f'no new frame from camera {self.camera} for {timeout:.0f}s')
             return self._frame.copy()
 
+    def peek(self) -> tuple[float, np.ndarray | None]:
+        """The newest frame and its capture time, without waiting (for live previews)."""
+        with self._lock:
+            return self._frame_time, self._frame
+
     def stop(self) -> None:
         self._running = False
         if self._thread:

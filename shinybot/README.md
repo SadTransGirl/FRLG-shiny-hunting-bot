@@ -6,6 +6,26 @@ SwiCC) and a capture card. It has no AI model and nothing to train: the bot
 learns what your normal starter looks like on the summary screen, then stops
 when the colours change.
 
+## The window (easiest)
+Double-click **`ShinyBot.pyw`** in the repo folder, or run `python -m shinybot gui`.
+In the window:
+- **Connect** reconnects to a paired Switch. **Pair…** pairs a new one (open
+  Controllers → Change Grip/Order first).
+- The **video** shows the capture card. Pick the camera number at the top.
+- **Play from the PC:** click the on-screen buttons, or click the video and
+  use the keyboard (the key list is shown in the window). Keys only reach the
+  Switch while the window is focused, and everything is released when you
+  switch to another app. Input is ignored while the bot is running a test or
+  a hunt.
+- **Shiny hunt row:** *Test sequence* runs one reset. Then get to the summary
+  screen and use *Mark sprite box* and *Mark screen box*: drag the boxes on
+  the video. *Start hunt* starts hunting and *Stop* stops it. Edits to
+  `shinybot.json` (timings) are picked up when you press Test or Start, with
+  no restart needed.
+- Keyboard bindings can be changed in `shinybot.json` under `"keys"`.
+
+The rest of this page describes the same steps on the command line.
+
 ## Before you start
 1. Pair the virtual controller once (see `bt_controller/README.md`) and check
    `python -m bt_controller connect` works.

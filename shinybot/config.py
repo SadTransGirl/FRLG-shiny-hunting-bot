@@ -10,6 +10,16 @@ from .sequence import STARTER_SEQUENCE, Step, steps_from_config, steps_to_config
 
 CONFIG_FILE = Path('shinybot.json')
 
+# Keyboard -> controller, used by the window. Keys are Tk key names in lower
+# case; LS_* move the left stick.
+DEFAULT_KEYS = {
+    'up': 'UP', 'down': 'DOWN', 'left': 'LEFT', 'right': 'RIGHT',
+    'x': 'A', 'z': 'B', 's': 'X', 'a': 'Y',
+    'q': 'L', 'w': 'R', '1': 'ZL', '2': 'ZR',
+    'return': 'PLUS', 'backspace': 'MINUS', 'h': 'HOME', 'c': 'CAPTURE',
+    'i': 'LS_UP', 'k': 'LS_DOWN', 'j': 'LS_LEFT', 'l': 'LS_RIGHT',
+}
+
 
 @dataclass
 class Config:
@@ -24,6 +34,7 @@ class Config:
     max_wrong_screens: int = 3  # stop after this many failed resets in a row
     save_every_encounter: bool = False
     sequence: list[Step] = field(default_factory=lambda: list(STARTER_SEQUENCE))
+    keys: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_KEYS))
 
     @classmethod
     def load(cls, path: Path = CONFIG_FILE) -> Config:

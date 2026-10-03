@@ -54,6 +54,7 @@ class Hunter:
         self.stats = Stats.load(self.stats_path)
         self.detector = ShinyDetector(config.sprite_box, config.screen_box, config.sensitivity)
         self.expected_screen = self._load_expected_screen()
+        self.last_result: CheckResult | None = None
 
     def _load_expected_screen(self) -> RegionModel | None:
         setup = cv2.imread(str(self.output_dir / SETUP_FRAME))
@@ -113,6 +114,7 @@ class Hunter:
             frame = await self.attempt()
             session_resets += 1
             result = self.detector.check(frame)
+            self.last_result = result
             rate = session_resets / max(1e-9, time.monotonic() - started) * 3600
             logger.info('reset %d: %s [%.0f resets/hour]', self.stats.resets, result, rate)
             if self.config.save_every_encounter:
