@@ -788,7 +788,7 @@ class App:
             return
         self._photo = tk.PhotoImage(data=ppm.tobytes(), format='PPM')
         video.canvas.itemconfigure(video.image_item, image=self._photo)
-        if int(video.canvas.cget('height')) != shown_height:
+        if video.canvas.winfo_reqheight() != shown_height:
             video.canvas.configure(height=shown_height)
         if video is self.hunt_video:
             self._draw_boxes()

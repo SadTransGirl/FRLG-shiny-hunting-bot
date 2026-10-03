@@ -284,5 +284,7 @@ class GlassLabel(_Glass, tk.Canvas):
         bbox = self.bbox(self._text_item) or (0, 0, 1, 1)
         width = self.fixed_width or (bbox[2] - bbox[0] + self.S(2))
         height = max(bbox[3] - bbox[1], self.font.metrics('linespace')) + self.S(2)
-        if int(self.cget('width')) != width or int(self.cget('height')) != height:
+        # Track the size ourselves: cget() can return units like '10c' (Windows default).
+        if getattr(self, '_size', None) != (width, height):
+            self._size = (width, height)
             self.configure(width=width, height=height)
