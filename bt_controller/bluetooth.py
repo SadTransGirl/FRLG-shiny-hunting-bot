@@ -47,6 +47,11 @@ from .protocol import (
 logger = logging.getLogger(__name__)
 
 CONTROLLER_NAME = 'Pro Controller'
+
+# Allow role switch (0x0001) and sniff mode (0x0004) on new links, as Linux does
+# by default. Adapters power up with both disabled, and the Switch drops a
+# controller that refuses to enter sniff mode about a second after connecting.
+DEFAULT_LINK_POLICY = 0x0005
 CLASS_OF_DEVICE = 0x002508  # Peripheral / Gamepad
 
 # Device ID (PnP) record values of a genuine Pro Controller. The Switch looks
@@ -288,6 +293,15 @@ class ProController:
         device.on(device.EVENT_CONNECTION, self._on_connection)
 
         await device.power_on()
+        try:
+            await device.send_command(
+                hci.HCI_Write_Default_Link_Policy_Settings_Command(
+                    default_link_policy_settings=DEFAULT_LINK_POLICY
+                ),
+                check_result=True,
+            )
+        except Exception as error:
+            logger.warning('adapter refused to enable sniff mode / role switch (%s)', error)
         address = device.public_address
         logger.info('adapter address %s', address)
         # bytes(Address) is little endian; the protocol reports it big endian.
@@ -419,6 +433,19 @@ class ProController:
     def _on_connection(self, connection) -> None:
         logger.info('Bluetooth connection from/to %s', connection.peer_address)
         connection.on(connection.EVENT_DISCONNECTION, self._on_disconnection)
+        connection.on(
+            connection.EVENT_MODE_CHANGE,
+            lambda: logger.info(
+                'link mode: %s (interval %d slots)',
+                hci.HCI_Mode_Change_Event.Mode(connection.classic_mode).name,
+                connection.classic_interval,
+            ),
+        )
+        connection.on(
+            connection.EVENT_MODE_CHANGE_FAILURE,
+            lambda status: logger.warning('link mode change failed: %s', hci.HCI_Constant.error_name(status)),
+        )
+        connection.on(connection.EVENT_ROLE_CHANGE, lambda role: logger.info('link role: %s', role))
 
     def _on_disconnection(self, reason: int) -> None:
         logger.warning('disconnected (reason %s)', hci.HCI_Constant.error_name(reason))
