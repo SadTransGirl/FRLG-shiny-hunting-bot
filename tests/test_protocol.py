@@ -91,9 +91,13 @@ def test_unknown_subcommand_gets_ack(proto):
     assert reply[13:15] == bytes([0x80, 0x77])
 
 
-def test_timer_counts_reports(proto):
-    timers = [proto.full_report()[1] for _ in range(3)]
-    assert timers == [timers[0], timers[0] + 1, timers[0] + 2]
+def test_timer_follows_real_time(proto, monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr('bt_controller.protocol.time.monotonic', lambda: now[0])
+    proto._start = 100.0
+    first = proto.full_report()[1]
+    now[0] += 0.015  # one report interval
+    assert (proto.full_report()[1] - first) & 0xFF == 3
 
 
 def test_reset_session_clears_handshake(proto):

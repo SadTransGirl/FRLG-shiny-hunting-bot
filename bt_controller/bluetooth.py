@@ -48,6 +48,10 @@ logger = logging.getLogger(__name__)
 
 CONTROLLER_NAME = 'Pro Controller'
 
+# Most reports allowed to wait in the adapter. More only adds input lag: the
+# Switch polls a sniff-mode link at a fixed rate, so a backlog never drains.
+MAX_QUEUED_REPORTS = 2
+
 # Allow role switch (0x0001) and sniff mode (0x0004) on new links, as Linux does
 # by default. Adapters power up with both disabled, and the Switch drops a
 # controller that refuses to enter sniff mode about a second after connecting.
@@ -483,7 +487,7 @@ class ProController:
     def _congested(self) -> bool:
         # Skip a periodic report rather than let a backlog build up input lag.
         queue = self.device.host.acl_packet_queue if self.device else None
-        return queue is not None and queue.pending > queue.max_in_flight
+        return queue is not None and queue.pending >= MAX_QUEUED_REPORTS
 
     async def _report_loop(self) -> None:
         loop = asyncio.get_running_loop()
