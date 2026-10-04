@@ -115,7 +115,7 @@ async def cmd_hunt(config: Config) -> None:
         print(f'  SHINY FOUND after {hunter.stats.resets} resets! ({result})')
         print('  The bot has stopped pressing buttons. Check the screen, then catch/save it.')
         print('*' * 60)
-        await alert()
+        await alert(config.alert_sound)
         await asyncio.to_thread(input, 'Press Enter to disconnect the virtual controller...')
     except HuntStopped as stop:
         print(f'\nHunt stopped: {stop}')

@@ -169,3 +169,13 @@ def test_default_sequences_are_independent_copies():
     a, b = Config(), Config()
     a.sequence[0].wait = 99
     assert b.sequence[0].wait != 99
+
+
+def test_alert_sound_choice(tmp_path):
+    from shinybot.app import BEEPS, DEFAULT_ALERT_SOUND, alert_sound_path
+    assert alert_sound_path(None) == DEFAULT_ALERT_SOUND and DEFAULT_ALERT_SOUND.exists()
+    assert alert_sound_path(BEEPS) is None
+    chosen = tmp_path / 'my sound.mp3'
+    chosen.write_bytes(b'x')
+    assert alert_sound_path(str(chosen)) == chosen
+    assert alert_sound_path(str(tmp_path / 'missing.mp3')) is None  # deleted file -> beeps

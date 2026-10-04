@@ -72,12 +72,54 @@ async def run_test_sequence(controller, frames, config: Config) -> Path:
     return folder
 
 
-async def alert() -> None:
-    if sys.platform == 'win32':
-        import winsound
+DEFAULT_ALERT_SOUND = Path(__file__).parent / 'assets' / 'shiny_alert.mp3'
+BEEPS = 'beeps'  # alert_sound value meaning "no sound file, just beep"
 
-        for _ in range(5):
-            await asyncio.to_thread(winsound.Beep, 1200, 300)
-            await asyncio.sleep(0.2)
-    else:
+
+def alert_sound_path(setting: str | None) -> Path | None:
+    """The sound file for the shiny alert: the chosen file, the bundled one, or None (beeps)."""
+    if setting == BEEPS:
+        return None
+    path = Path(setting) if setting else DEFAULT_ALERT_SOUND
+    return path if path.exists() else None
+
+
+def play_sound_file(path: Path) -> None:
+    """Play an MP3/WAV to the end (blocking) with Windows' built-in player (MCI)."""
+    import ctypes
+    import threading
+
+    winmm = ctypes.windll.winmm
+    alias = f'shinybot{threading.get_ident()}'
+
+    def send(command: str) -> None:
+        error = winmm.mciSendStringW(command, None, 0, 0)
+        if error:
+            text = ctypes.create_unicode_buffer(256)
+            winmm.mciGetErrorStringW(error, text, 255)
+            raise RuntimeError(text.value or f'MCI error {error}')
+
+    send(f'open "{path}" type mpegvideo alias {alias}')
+    try:
+        send(f'play {alias} wait')
+    finally:
+        winmm.mciSendStringW(f'close {alias}', None, 0, 0)
+
+
+async def alert(sound: str | None = None) -> None:
+    """Shiny alert: play the alert sound (see alert_sound_path), else beep."""
+    if sys.platform != 'win32':
         print('\a')
+        return
+    path = alert_sound_path(sound)
+    if path is not None:
+        try:
+            await asyncio.to_thread(play_sound_file, path)
+            return
+        except Exception as error:
+            logger.warning('could not play %s (%s); beeping instead', path, error)
+    import winsound
+
+    for _ in range(5):
+        await asyncio.to_thread(winsound.Beep, 1200, 300)
+        await asyncio.sleep(0.2)

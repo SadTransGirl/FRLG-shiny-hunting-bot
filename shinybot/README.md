@@ -15,7 +15,9 @@ top bar show the controller, camera and sound status; click **Sound** to
 mute/unmute from any page. Text uses "Pokemon Pixel Font" by SpyroSteak
 (CC BY-SA). The panels are see-through over a background picture; change it on
 the Setup page (**Choose picture** / **Default**). The default is
-`shinybot/assets/background.jpg`.
+`shinybot/assets/background.jpg`. The shiny alert plays
+`shinybot/assets/shiny_alert.mp3`; on the Setup page you can choose another
+sound (MP3/WAV), **Test** it, or switch to **Beeps**.
 
 In the window:
 - **Connect** reconnects to a paired Switch. **Pair…** pairs a new one (open

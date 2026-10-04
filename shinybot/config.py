@@ -45,6 +45,7 @@ class Config:
     audio_muted: bool = False
     audio_volume: float = 1.0
     background: str | None = None  # picture behind the window; None = the bundled one
+    alert_sound: str | None = None  # shiny alert: a sound file, None = bundled, 'beeps'
 
     @property
     def sequence(self) -> list[Step]:

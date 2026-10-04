@@ -19,7 +19,8 @@ import customtkinter as ctk
 import cv2
 
 from . import theme
-from .app import OUTPUT_DIR, alert, open_controller, run_test_sequence, setup_logging
+from .app import (BEEPS, OUTPUT_DIR, alert, alert_sound_path, open_controller, run_test_sequence,
+                  setup_logging)
 from .audio import AudioPassthrough, guess_capture_device, list_inputs
 from .capture import FrameGrabber
 from .config import Config
@@ -434,16 +435,50 @@ class App:
         volume.pack(side='left', fill='x', expand=True)
         volume.bind('<ButtonRelease-1>', lambda _e: self.config.save(), add='+')
 
-        look = Card(page, 'Background', 'Any picture works; it is darkened behind the panels.')
+        look = Card(page, 'Background and alert')
         look.grid(row=2, column=1, sticky='nsew', padx=(6, 0))
+        label(look.body, 'Background picture (darkened behind the panels)', muted=True, font='small',
+              wrap=True).pack(fill='x', pady=(0, 4))
         self._button_row(look.body, [('Choose picture', self.choose_background, 'normal'),
                                      ('Default', lambda: self.set_background(None), 'normal')]
                          ).pack(fill='x')
-        label(look.body, 'Font: "Pokemon Pixel Font" by SpyroSteak (CC BY-SA). '
-                         'Settings, screenshots and logs:', muted=True, font='small',
-              wrap=True).pack(fill='x', pady=(12, 0))
-        label(look.body, 'shinybot.json   shinybot_output\\', muted=True, font='mono').pack(
-            fill='x', pady=(4, 0))
+        self.alert_label = label(look.body, '', muted=True, font='small', wrap=True)
+        self.alert_label.pack(fill='x', pady=(12, 4))
+        self._button_row(look.body, [('Choose sound', self.choose_alert_sound, 'normal'),
+                                     ('Test', self.test_alert, 'normal')]).pack(fill='x')
+        self._button_row(look.body, [('Default', lambda: self.set_alert_sound(None), 'normal'),
+                                     ('Beeps', lambda: self.set_alert_sound(BEEPS), 'normal')]
+                         ).pack(fill='x', pady=(6, 0))
+        self._show_alert_sound()
+        label(look.body, 'Font: "Pokemon Pixel Font" by SpyroSteak (CC BY-SA).', muted=True,
+              font='small', wrap=True).pack(fill='x', pady=(12, 0))
+
+    def _show_alert_sound(self) -> None:
+        path = alert_sound_path(self.config.alert_sound)
+        if path is None:
+            text = 'Shiny alert: beeps'
+        elif self.config.alert_sound:
+            text = f'Shiny alert: {path.stem}'
+        else:
+            text = 'Shiny alert: default sound'
+        self.alert_label.set(text)
+
+    def choose_alert_sound(self) -> None:
+        from tkinter import filedialog
+
+        path = filedialog.askopenfilename(
+            title='Shiny alert sound',
+            filetypes=[('Sounds', '*.mp3 *.wav *.wma *.m4a'), ('All files', '*.*')])
+        if path:
+            self.set_alert_sound(path)
+
+    def set_alert_sound(self, sound: str | None) -> None:
+        self.config.alert_sound = sound
+        self.config.save()
+        self._show_alert_sound()
+
+    def test_alert(self) -> None:
+        self.worker.submit(alert(self.config.alert_sound))
 
     def choose_background(self) -> None:
         from tkinter import filedialog
@@ -943,7 +978,7 @@ class App:
         self.root.lift()
         self.root.attributes('-topmost', True)
         self.root.after(500, lambda: self.root.attributes('-topmost', False))
-        self.worker.submit(alert())
+        self.worker.submit(alert(self.config.alert_sound))
         messagebox.showinfo(
             'SHINY!', f'Shiny found after {self.hunter.stats.resets} resets!\n\n{check}\n\n'
                       'The bot has stopped. You can play from here (keyboard or buttons) '
