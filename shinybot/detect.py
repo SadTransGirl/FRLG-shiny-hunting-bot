@@ -18,11 +18,18 @@ Box = tuple[int, int, int, int]  # x, y, width, height
 # much (0-255), or more if the capture turns out to be noisier.
 MIN_PIXEL_THRESHOLD = 20
 MAX_PIXEL_THRESHOLD = 50
-# Fraction of changed pixels that marks a region as different.
-MIN_CHANGED_FRACTION = 0.05
-# Shift of a region's average colour (0-255) that marks it as different. Catches
-# subtle palette swaps that per-pixel noise from video compression could hide.
-MIN_COLOR_SHIFT = 4.0
+# Lowest thresholds, used when the capture is very clean. The real thresholds
+# are set from how much normal calibration screenshots differ from each other:
+# a clean capture catches even subtle shinies, a noisy one avoids false alarms.
+# Fraction of changed pixels that marks a region as different:
+MIN_CHANGED_FRACTION = 0.004
+# Shift of a region's average colour (0-255) that marks it as different; catches
+# palette swaps that per-pixel noise from video compression could hide:
+MIN_COLOR_SHIFT = 0.8
+# Calibration screenshots differing more than this mean the sequence isn't
+# landing on the same screen every time (or one of them is already shiny).
+CALIBRATION_MAX_FRACTION = 0.05
+CALIBRATION_MAX_SHIFT = 4.0
 
 
 def crop(frame: np.ndarray, box: Box) -> np.ndarray:
@@ -57,19 +64,26 @@ class RegionModel:
     calibration_shifts: list[float]
 
     @classmethod
-    def learn(cls, samples: list[np.ndarray], sensitivity: float = 3.0) -> RegionModel:
+    def learn(cls, samples: list[np.ndarray], sensitivity: float = 3.0,
+              min_fraction: float = MIN_CHANGED_FRACTION, min_shift: float = MIN_COLOR_SHIFT
+              ) -> RegionModel:
         if not samples:
             raise ValueError('need at least one calibration sample')
         reference = np.median(np.stack(samples), axis=0).astype(np.uint8)
-        diffs = [_pixel_diff(sample, reference) for sample in samples]
-        # Median across samples, so one odd sample can't inflate the noise
-        # estimate and blind the detector; it shows up in `fractions` instead.
-        noise = float(np.median([np.percentile(d, 99.9) for d in diffs]))
+        # Noise is measured between pairs of samples: two normal resets differ
+        # about as much as two calibration screenshots do. (A sample that is
+        # off entirely is caught by the calibration check instead.)
+        pairs = [(a, b) for i, a in enumerate(samples) for b in samples[i + 1:]] or [(samples[0], samples[0])]
+        pair_diffs = [_pixel_diff(a, b) for a, b in pairs]
+        noise = float(np.median([np.percentile(d, 99.9) for d in pair_diffs]))
         pixel_threshold = min(MAX_PIXEL_THRESHOLD, max(MIN_PIXEL_THRESHOLD, noise * 1.5))
+        pair_fraction = max(float((d >= pixel_threshold).mean()) for d in pair_diffs)
+        pair_shift = max(_color_shift(a, b) for a, b in pairs)
+        fraction_threshold = max(min_fraction, pair_fraction * sensitivity)
+        shift_threshold = max(min_shift, pair_shift * sensitivity)
+        diffs = [_pixel_diff(sample, reference) for sample in samples]
         fractions = [float((d >= pixel_threshold).mean()) for d in diffs]
-        fraction_threshold = max(MIN_CHANGED_FRACTION, float(np.median(fractions)) * sensitivity)
         shifts = [_color_shift(sample, reference) for sample in samples]
-        shift_threshold = max(MIN_COLOR_SHIFT, float(np.median(shifts)) * sensitivity * 2)
         return cls(reference, pixel_threshold, fraction_threshold, shift_threshold, fractions, shifts)
 
     def changed_fraction(self, region: np.ndarray) -> float:
@@ -118,11 +132,14 @@ class ShinyDetector:
     def finish_calibration(self) -> list[str]:
         """Build the reference models; returns warnings if the samples disagree."""
         self.sprite = RegionModel.learn(self._sprite_samples, self.sensitivity)
-        self.screen = RegionModel.learn(self._screen_samples, self.sensitivity)
+        # The screen box only has to tell the summary screen from a different
+        # screen, so it stays lenient (being picky there only stops hunts).
+        self.screen = RegionModel.learn(self._screen_samples, self.sensitivity,
+                                        CALIBRATION_MAX_FRACTION, CALIBRATION_MAX_SHIFT)
         warnings = []
         for name, model in (('sprite', self.sprite), ('screen', self.screen)):
-            if (max(model.calibration_fractions) > MIN_CHANGED_FRACTION
-                    or max(model.calibration_shifts) > MIN_COLOR_SHIFT):
+            if (max(model.calibration_fractions) > CALIBRATION_MAX_FRACTION
+                    or max(model.calibration_shifts) > CALIBRATION_MAX_SHIFT):
                 warnings.append(
                     f'the calibration screenshots of the {name} box differ from each other '
                     f'({max(model.calibration_fractions):.1%} of pixels); check the saved '

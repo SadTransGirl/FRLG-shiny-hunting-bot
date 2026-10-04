@@ -101,7 +101,7 @@ async def test_run_steps_presses_buttons_in_order():
 
 
 async def test_hunt_stops_on_shiny(tmp_path):
-    frames = [summary_frame() for _ in range(3 + 5)] + [summary_frame(body=SHINY)]
+    frames = [summary_frame() for _ in range(3 + 5)] + [summary_frame(body=SHINY)] * 3
     hunter = make_hunter(tmp_path, frames)
     _frame, result = await hunter.run()
     assert result.verdict == 'shiny'
@@ -126,7 +126,7 @@ async def test_calibration_checks_against_setup_screen(tmp_path):
 
 
 async def test_hunt_reconnects_before_a_reset(tmp_path):
-    hunter = make_hunter(tmp_path, [summary_frame() for _ in range(4)] + [summary_frame(body=SHINY)])
+    hunter = make_hunter(tmp_path, [summary_frame() for _ in range(4)] + [summary_frame(body=SHINY)] * 3)
     hunter.controller.connected = False
     await hunter.run()
     assert hunter.controller.connected
@@ -179,3 +179,17 @@ def test_alert_sound_choice(tmp_path):
     chosen.write_bytes(b'x')
     assert alert_sound_path(str(chosen)) == chosen
     assert alert_sound_path(str(tmp_path / 'missing.mp3')) is None  # deleted file -> beeps
+
+
+async def test_one_off_shiny_frame_is_not_reported(tmp_path, monkeypatch):
+    """A single odd frame (capture glitch) must not stop the hunt; a real shiny persists."""
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr('shinybot.hunt.asyncio.sleep', lambda _s: real_sleep(0))
+    frames = ([summary_frame() for _ in range(3)]          # calibration
+              + [summary_frame(body=SHINY), summary_frame()]  # glitch, then the confirm frame is normal
+              + [summary_frame(body=SHINY)] * 3)              # real shiny: confirmed
+    hunter = make_hunter(tmp_path, frames)
+    _frame, result = await hunter.run()
+    assert result.verdict == 'shiny'
+    assert hunter.stats.resets == 5
+    assert (tmp_path / 'unconfirmed_4.png').exists()

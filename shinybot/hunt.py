@@ -15,12 +15,14 @@ import cv2
 import numpy as np
 
 from .config import Config
-from .detect import CheckResult, RegionModel, ShinyDetector, crop
+from .detect import (CALIBRATION_MAX_FRACTION, CALIBRATION_MAX_SHIFT, CheckResult, RegionModel,
+                     ShinyDetector, crop)
 from .sequence import run_steps
 
 logger = logging.getLogger(__name__)
 
 SETUP_FRAME = 'setup_frame.png'
+CONFIRM_FRAMES = 2  # extra frames that must also look shiny before the hunt stops
 
 
 @contextlib.contextmanager
@@ -78,7 +80,8 @@ class Hunter:
         setup = cv2.imread(str(self.output_dir / SETUP_FRAME))
         if setup is None:
             return None
-        return RegionModel.learn([crop(setup, self.config.screen_box)])
+        return RegionModel.learn([crop(setup, self.config.screen_box)],
+                                 min_fraction=CALIBRATION_MAX_FRACTION, min_shift=CALIBRATION_MAX_SHIFT)
 
     def _save(self, name: str, frame: np.ndarray) -> Path:
         path = self.output_dir / name
@@ -122,6 +125,18 @@ class Hunter:
             raise HuntStopped('calibration looks unreliable: ' + '; '.join(warnings))
         logger.info('calibration done')
 
+    async def _confirm_shiny(self, frame: np.ndarray) -> bool:
+        """A shiny stays shiny in every frame; capture noise doesn't. Check a few more."""
+        for _ in range(CONFIRM_FRAMES):
+            await asyncio.sleep(0.25)
+            again = self.detector.check(await asyncio.to_thread(self.frames.latest))
+            if again.verdict != 'shiny':
+                path = self._save(f'unconfirmed_{self.stats.resets}.png', frame)
+                logger.info('possible shiny not confirmed by the next frame (%s); probably capture '
+                            'noise, continuing. Screenshot: %s', again, path)
+                return False
+        return True
+
     async def run(self) -> tuple[np.ndarray, CheckResult]:
         """Hunt until a shiny is found; returns its screenshot and check result."""
         with keep_pc_awake():
@@ -141,6 +156,9 @@ class Hunter:
             logger.info('reset %d: %s [%.0f resets/hour]', self.stats.resets, result, rate)
             if self.config.save_every_encounter:
                 self._save(f'encounter_{self.stats.resets:06d}.png', frame)
+
+            if result.verdict == 'shiny' and not await self._confirm_shiny(frame):
+                continue
 
             if result.verdict == 'shiny':
                 self.stats.shinies += 1

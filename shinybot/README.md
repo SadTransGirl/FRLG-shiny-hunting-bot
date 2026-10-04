@@ -120,8 +120,14 @@ python -m shinybot hunt
   they show the summary screen.
 - After that, every reset is checked. The latest screenshot is always in
   `shinybot_output/last_check.png`.
-- **On a shiny** the bot stops pressing buttons, beeps and saves
-  `SHINY_reset_N.png`. Take over with your own controller and save.
+- **On a shiny** the bot stops pressing buttons, plays the alert and saves
+  `SHINY_reset_N.png`. Take over with your own controller and save. Before
+  stopping it looks at the screen twice more (half a second), so a one-frame
+  capture glitch doesn't stop the hunt; those are saved as
+  `unconfirmed_N.png` and the hunt carries on.
+- The calibration measures how noisy your capture card is and sets the
+  thresholds from that, so subtle shinies (only a few colours change) are
+  still caught on a clean capture.
 - If 3 resets in a row miss the summary screen, it stops so it doesn't reset
   forever while stuck. Run `test-sequence` again to find which step drifts.
 - If the Switch disconnects, the bot reconnects by itself.
