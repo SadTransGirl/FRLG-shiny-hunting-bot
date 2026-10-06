@@ -132,6 +132,13 @@ python -m shinybot hunt
   forever while stuck. Run `test-sequence` again to find which step drifts.
 - If the Switch disconnects, the bot reconnects by itself.
 - Total resets are kept in `shinybot_output/stats.json` across sessions.
+- **Black screen and the log just stops?** The bot froze or was closed in the
+  middle of the soft reset, so the Switch still thinks A+B+PLUS+MINUS are
+  held and the game keeps resetting. Closing the bot (or pressing a button on
+  a real controller) frees it. The log says `ShinyBot started` and `window
+  closed`, and if the bot's loop gets stuck it logs where (`loop has been
+  stuck`). Crashes go to `shinybot_output/crash.log`. Send those if it
+  happens.
 
 Expect about 120 resets an hour. Starters are 1 in 8192 (full odds), so
 leave it running; it can take days.

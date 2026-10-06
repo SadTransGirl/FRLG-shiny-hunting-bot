@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import faulthandler
 import logging
 import sys
+import threading
+import time
+import traceback
 from pathlib import Path
 
 import cv2
@@ -32,6 +36,68 @@ def setup_logging(console: bool = True) -> None:
         handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
         handler.addFilter(lambda r: r.name.startswith(('shinybot', 'bt_controller')))
         root.addHandler(handler)
+
+
+_crash_file = None  # kept open so faulthandler can write to it during a crash
+
+
+def install_crash_logging() -> None:
+    """Record crashes in hunt.log / crash.log (ShinyBot.pyw has no console to show them)."""
+    global _crash_file
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    _crash_file = open(OUTPUT_DIR / 'crash.log', 'a', encoding='utf-8')
+    faulthandler.enable(_crash_file)  # hard crashes inside OpenCV, the USB driver, ...
+
+    def thread_error(args) -> None:
+        name = args.thread.name if args.thread else '?'
+        logger.critical('unexpected error in thread %s', name,
+                        exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+
+    threading.excepthook = thread_error
+    sys.excepthook = lambda *exc: logger.critical('unexpected error', exc_info=exc)
+
+
+def _thread_stacks() -> str:
+    names = {thread.ident: thread.name for thread in threading.enumerate()}
+    return '\n'.join(f'--- thread {names.get(ident, ident)}\n' + ''.join(traceback.format_stack(frame))
+                     for ident, frame in sys._current_frames().items())
+
+
+class LoopWatchdog:
+    """Logs where the program is stuck if the asyncio loop (Bluetooth + hunt) stops running.
+
+    While that loop is stuck no reports reach the Switch, so it keeps seeing the last buttons
+    (a held soft reset shows as a black screen).
+    """
+
+    def __init__(self, loop: asyncio.AbstractEventLoop, stall_after: float = 10.0) -> None:
+        self.loop = loop
+        self.stall_after = stall_after
+        self._beat = time.monotonic()
+        self._stop = threading.Event()
+        threading.Thread(target=self._run, name='watchdog', daemon=True).start()
+
+    def _touch(self) -> None:
+        self._beat = time.monotonic()
+
+    def _run(self) -> None:
+        stalled = False
+        while not self._stop.wait(1.0):
+            try:
+                self.loop.call_soon_threadsafe(self._touch)
+            except RuntimeError:  # loop closed
+                return
+            late = time.monotonic() - self._beat
+            if late > self.stall_after and not stalled:
+                stalled = True
+                logger.error('the Bluetooth/hunt loop has been stuck for %.0f s. Where each '
+                             'thread is:\n%s', late, _thread_stacks())
+            elif stalled and late < 2:
+                stalled = False
+                logger.warning('the Bluetooth/hunt loop is running again')
+
+    def stop(self) -> None:
+        self._stop.set()
 
 
 async def open_controller(config: Config) -> ProController:

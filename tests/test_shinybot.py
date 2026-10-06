@@ -193,3 +193,30 @@ async def test_one_off_shiny_frame_is_not_reported(tmp_path, monkeypatch):
     assert result.verdict == 'shiny'
     assert hunter.stats.resets == 5
     assert (tmp_path / 'unconfirmed_4.png').exists()
+
+
+def test_watchdog_logs_where_a_stuck_loop_is(caplog):
+    """If the Bluetooth/hunt loop freezes, the log must say where (the Switch keeps the held buttons)."""
+    import threading
+    import time
+
+    from shinybot.app import LoopWatchdog
+
+    def stuck_in_here():
+        time.sleep(2.5)
+
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    watchdog = LoopWatchdog(loop, stall_after=0.5)
+    try:
+        with caplog.at_level('INFO', logger='shinybot'):
+            loop.call_soon_threadsafe(stuck_in_here)
+            time.sleep(4.0)
+    finally:
+        watchdog.stop()
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(2)
+        loop.close()
+    assert 'loop has been stuck' in caplog.text and 'stuck_in_here' in caplog.text
+    assert 'running again' in caplog.text

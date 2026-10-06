@@ -32,6 +32,7 @@ SUB_BT_PAIRING = 0x01
 SUB_DEVICE_INFO = 0x02
 SUB_SET_INPUT_MODE = 0x03
 SUB_TRIGGER_ELAPSED = 0x04
+SUB_SET_HCI_STATE = 0x06  # sent when the Switch goes to sleep or drops its controllers
 SUB_SHIPMENT_MODE = 0x08
 SUB_SPI_READ = 0x10
 SUB_SET_MCU_CONFIG = 0x21
@@ -47,6 +48,7 @@ SUBCOMMAND_NAMES = {
     SUB_DEVICE_INFO: 'device info',
     SUB_SET_INPUT_MODE: 'set input mode',
     SUB_TRIGGER_ELAPSED: 'trigger buttons elapsed time',
+    SUB_SET_HCI_STATE: 'disconnect (Switch going to sleep or dropping controllers)',
     SUB_SHIPMENT_MODE: 'shipment mode',
     SUB_SPI_READ: 'read calibration (SPI)',
     SUB_SET_MCU_CONFIG: 'NFC/IR config',
@@ -273,7 +275,8 @@ class SwitchProtocol:
         elif subcommand == SUB_ENABLE_IMU:
             self.imu_enabled = bool(args and args[0])
         elif subcommand not in (
-            SUB_SHIPMENT_MODE, SUB_SET_MCU_STATE, SUB_SET_HOME_LIGHT, SUB_IMU_SENSITIVITY
+            SUB_SHIPMENT_MODE, SUB_SET_MCU_STATE, SUB_SET_HOME_LIGHT, SUB_IMU_SENSITIVITY,
+            SUB_SET_HCI_STATE,
         ):
             logger.warning('unhandled subcommand 0x%02X, sending plain ACK', subcommand)
         return self._subcommand_reply(0x80, subcommand)

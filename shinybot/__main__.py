@@ -16,7 +16,8 @@ import sys
 
 import cv2
 
-from .app import OUTPUT_DIR, alert, connect_controller, run_test_sequence, setup_logging
+from .app import (OUTPUT_DIR, LoopWatchdog, alert, connect_controller, install_crash_logging,
+                  run_test_sequence, setup_logging)
 from .capture import FrameGrabber, list_cameras
 from .config import CONFIG_FILE, Config
 from .hunt import SETUP_FRAME, Hunter, HuntStopped
@@ -105,6 +106,7 @@ async def cmd_test_sequence(config: Config) -> None:
 
 async def cmd_hunt(config: Config) -> None:
     controller = await connect_controller(config)
+    watchdog = LoopWatchdog(asyncio.get_running_loop())
     try:
         with FrameGrabber(config.camera, *config.frame_size) as frames:
             hunter = Hunter(controller, frames, config, OUTPUT_DIR)
@@ -120,6 +122,7 @@ async def cmd_hunt(config: Config) -> None:
     except HuntStopped as stop:
         print(f'\nHunt stopped: {stop}')
     finally:
+        watchdog.stop()
         await controller.close()
 
 
@@ -137,6 +140,7 @@ def main() -> None:
         return
 
     setup_logging()
+    install_crash_logging()
     config = Config.load()
     if args.camera is not None:
         config.camera = args.camera

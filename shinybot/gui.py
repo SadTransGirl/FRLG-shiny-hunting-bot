@@ -19,8 +19,8 @@ import customtkinter as ctk
 import cv2
 
 from . import theme
-from .app import (BEEPS, OUTPUT_DIR, alert, alert_sound_path, open_controller, run_test_sequence,
-                  setup_logging)
+from .app import (BEEPS, OUTPUT_DIR, LoopWatchdog, alert, alert_sound_path, install_crash_logging,
+                  open_controller, run_test_sequence, setup_logging)
 from .audio import AudioPassthrough, guess_capture_device, list_inputs
 from .capture import FrameGrabber
 from .config import Config
@@ -57,8 +57,9 @@ class AsyncWorker:
 
     def __init__(self) -> None:
         self.loop = asyncio.new_event_loop()
-        self.thread = threading.Thread(target=self.loop.run_forever, daemon=True)
+        self.thread = threading.Thread(target=self.loop.run_forever, name='bluetooth+hunt', daemon=True)
         self.thread.start()
+        self.watchdog = LoopWatchdog(self.loop)
 
     def submit(self, coro):
         return asyncio.run_coroutine_threadsafe(coro, self.loop)
@@ -67,6 +68,7 @@ class AsyncWorker:
         self.loop.call_soon_threadsafe(fn, *args)
 
     def stop(self) -> None:
+        self.watchdog.stop()
         self.loop.call_soon_threadsafe(self.loop.stop)
         self.thread.join(timeout=2)
 
@@ -217,6 +219,8 @@ class App:
         self._build()
         logging.getLogger().addHandler(_UiLogHandler(self))
         root.protocol('WM_DELETE_WINDOW', self.close)
+        root.report_callback_exception = (
+            lambda *exc: logger.error('error in the window', exc_info=exc))
         root.bind_all('<KeyPress>', self._on_key_press)
         root.bind_all('<KeyRelease>', self._on_key_release)
         root.bind('<FocusOut>', lambda _e: root.after(50, self._check_focus), add='+')
@@ -987,6 +991,7 @@ class App:
     # -- shutdown -------------------------------------------------------------
 
     def close(self) -> None:
+        logger.info('window closed')
         self.stop_job()
 
         async def shutdown():
@@ -1008,6 +1013,8 @@ class App:
 def main(camera: int | None = None) -> None:
     theme.set_app_id()
     setup_logging(console=sys.stderr is not None)
+    install_crash_logging()
+    logger.info('ShinyBot started')
     config = Config.load()
     if camera is not None:
         config.camera = camera
