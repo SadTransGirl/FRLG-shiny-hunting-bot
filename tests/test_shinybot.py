@@ -259,3 +259,18 @@ async def test_hunt_warns_when_the_sequence_has_no_random_wait(tmp_path, caplog)
     with caplog.at_level('WARNING', logger='shinybot'):
         await hunter.run()
     assert 'no random wait' in caplog.text
+
+
+def test_shiny_star_in_the_screen_box_is_still_a_shiny():
+    """FRLG draws a shiny star beside the picture. If the screen box catches it, the shiny
+    must not be thrown away as a wrong screen."""
+    detector = ShinyDetector(SPRITE_BOX, (120, 0, 120, 60))  # screen box reaching below the title
+    for _ in range(3):
+        detector.add_calibration_frame(summary_frame())
+    assert detector.finish_calibration() == []
+    shiny = summary_frame(body=SHINY)
+    cv2.rectangle(shiny, (190, 36), (205, 50), (40, 220, 250), -1)  # the star
+    result = detector.check(shiny)
+    assert result.verdict == 'shiny' and 0 < result.screen_change < 0.5
+    overworld = np.clip(rng.normal(90, 40, (240, 320, 3)), 0, 255).astype(np.uint8)
+    assert detector.check(overworld).verdict == 'wrong_screen'

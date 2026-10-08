@@ -876,8 +876,10 @@ class App:
             return
         self.select_page('hunt')
         self._box_mode = which
-        what = ('around the Pokemon sprite only' if which == 'sprite' else
-                'around something that never changes on the summary screen, e.g. the title bar')
+        what = ('around the Pokemon sprite, a little past its top right corner (where the '
+                'shiny star appears)' if which == 'sprite' else
+                'around something that never changes on the summary screen, e.g. the title bar '
+                '(not near the picture)')
         logger.info('drag a box on the video %s (with the summary screen showing)', what)
         self.canvas.configure(cursor='crosshair')
 

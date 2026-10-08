@@ -30,6 +30,8 @@ MIN_COLOR_SHIFT = 0.8
 # landing on the same screen every time (or one of them is already shiny).
 CALIBRATION_MAX_FRACTION = 0.05
 CALIBRATION_MAX_SHIFT = 4.0
+# A screen box that changed less than this is still the summary screen (see check()).
+MOSTLY_SAME_SCREEN = 0.5
 
 
 def crop(frame: np.ndarray, box: Box) -> np.ndarray:
@@ -155,10 +157,15 @@ class ShinyDetector:
         sprite = crop(frame, self.sprite_box)
         sprite_change = self.sprite.changed_fraction(sprite)
         sprite_shift = self.sprite.color_shift(sprite)
-        if self.screen.differs(screen):
+        screen_change = self.screen.changed_fraction(screen)
+        sprite_differs = self.sprite.differs(sprite)
+        # A different screen changes most of the screen box. A small change there with a
+        # changed sprite may be the shiny star (drawn beside the picture), so never throw
+        # it away as a wrong screen: the confirmation frames and the person decide.
+        if self.screen.differs(screen) and not (sprite_differs and screen_change < MOSTLY_SAME_SCREEN):
             verdict = 'wrong_screen'
-        elif self.sprite.differs(sprite):
+        elif sprite_differs:
             verdict = 'shiny'
         else:
             verdict = 'normal'
-        return CheckResult(verdict, sprite_change, sprite_shift, self.screen.changed_fraction(screen))
+        return CheckResult(verdict, sprite_change, sprite_shift, screen_change)

@@ -126,10 +126,12 @@ With the game on the summary screen (right after `test-sequence` is perfect):
 python -m shinybot setup
 ```
 Press SPACE to take the picture, then draw two boxes:
-1. Around the **Pokémon sprite** only.
+1. Around the **Pokémon sprite**. It's worth stretching it a little to the
+   right of the picture's top corner: that's where the game draws a small
+   **shiny star** (only for shinies), which makes a shiny even easier to spot.
 2. Around something that is **always the same** on the summary screen, like
-   the title bar. Don't include the sprite, name, gender or nature, because
-   those change.
+   the title bar. Don't include the sprite, the star spot, name, gender or
+   nature, because those change.
 
 ## 3. Hunt
 ```

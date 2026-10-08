@@ -82,7 +82,7 @@ def cmd_setup(config: Config) -> None:
                 raise SystemExit('Cancelled.')
         cv2.destroyAllWindows()
     config.frame_size = (frame.shape[1], frame.shape[0])
-    config.sprite_box = _select_box(frame, 'Box 1: the Pokemon sprite only')
+    config.sprite_box = _select_box(frame, 'Box 1: the Pokemon sprite, a little past its top right corner (shiny star spot)')
     config.screen_box = _select_box(
         frame, 'Box 2: something that is always the same on this screen (e.g. the title bar), '
                'not the sprite, name, gender or nature'
