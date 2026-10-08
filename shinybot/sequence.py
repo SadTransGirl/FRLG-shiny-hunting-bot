@@ -40,11 +40,11 @@ class Step:
 STARTER_SEQUENCE = [
     Step('A+B+PLUS+MINUS', hold=0.5, wait=5.0, note='soft reset'),
     # The seed is taken when the title screen is left: wait a random time on it.
-    Step('PLUS', wait=5.0, random_wait=3.0, note='skip intro to title screen'),
+    Step('PLUS', wait=5.0, random_wait=5.0, note='skip intro to title screen'),
     Step('PLUS', wait=2.5, note='title screen to main menu'),
     Step('A', wait=3.5, note='CONTINUE'),
     # The RNG advances every frame: stand a random time before taking the starter.
-    Step('B', wait=1.5, random_wait=3.0, note='skip "previously on your quest" recap'),
+    Step('B', wait=1.5, random_wait=5.0, note='skip "previously on your quest" recap'),
     # 3 x A covers 0-2 text boxes before the YES/NO question but stops before
     # the nickname question; B then advances text and answers that with NO.
     Step('A', wait=1.5, repeat=3, note='choose the Poke Ball, answer YES'),

@@ -64,7 +64,7 @@ repeats to within 1-2 frames) gets **the same few starters over and over** and
 may never see a shiny, however long it runs.
 
 So every sequence needs a **Random +** wait: a random extra pause (0 to that
-many seconds) picked fresh every reset. Put about 3 s on:
+many seconds) picked fresh every reset. Put about 5 s on:
 1. the step that waits **on the title screen** (the press that skips the intro
    to the title screen), and
 2. a step where you **stand in the lab** before taking the Poke Ball (the
@@ -73,7 +73,7 @@ many seconds) picked fresh every reset. Put about 3 s on:
 The default Starter sequence already has both. If your recorded sequence mashes
 A through the intro, title screen and menu as one step, split it so one step
 ends on the title screen, and give that one the random wait. Start hunt warns
-you if the sequence has no random wait. Each reset is about 3 s longer on
+you if the sequence has no random wait. Each reset is about 5 s longer on
 average.
 
 Tips: press one button at a time (buttons pressed together are recorded as a
