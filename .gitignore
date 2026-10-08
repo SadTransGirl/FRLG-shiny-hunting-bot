@@ -5,3 +5,15 @@ switch_pairing.json
 bt_controller.log
 shinybot.json
 shinybot_output/
+
+# Game files and console data: never commit these
+*.gba
+*.sav
+*.srm
+*.nsp
+*.xci
+*.nca
+*.tik
+*.cert
+prod.keys
+title.keys
