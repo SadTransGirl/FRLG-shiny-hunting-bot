@@ -220,3 +220,42 @@ def test_watchdog_logs_where_a_stuck_loop_is(caplog):
         loop.close()
     assert 'loop has been stuck' in caplog.text and 'stuck_in_here' in caplog.text
     assert 'running again' in caplog.text
+
+
+async def test_random_wait_varies_the_timing_every_run(monkeypatch):
+    """FRLG's seed and starter depend on exact frame timing, so runs must not repeat it."""
+    slept = []
+    real_sleep = asyncio.sleep
+
+    async def fake_sleep(seconds):
+        slept.append(seconds)
+        await real_sleep(0)
+
+    monkeypatch.setattr('shinybot.sequence.asyncio.sleep', fake_sleep)
+    steps = [Step('A', wait=0), Step('PLUS', wait=0, random_wait=3.0), Step('B', wait=0, repeat=4)]
+    for _ in range(50):
+        await run_steps(FakeController(), steps)
+    assert len(slept) == 50  # one random pause per run, after the PLUS step only
+    assert all(0 <= s <= 3.0 for s in slept)
+    assert len({round(s * 60) for s in slept}) > 30  # spread over many different frames
+
+
+def test_default_sequence_has_random_waits_and_old_configs_load():
+    from shinybot.sequence import has_random_wait
+    assert has_random_wait(STARTER_SEQUENCE)
+    assert Step.from_dict({'press': 'A', 'wait': 1.0}).random_wait == 0
+    with pytest.raises(ValueError):
+        Step.from_dict({'press': 'A', 'random_wait': -1})
+
+
+def test_merge_repeats_keeps_random_wait():
+    from shinybot.recorder import merge_repeats
+    merged = merge_repeats([Step('B', wait=0.5), Step('B', wait=0.5, random_wait=2.0)])
+    assert len(merged) == 1 and merged[0].repeat == 2 and merged[0].random_wait == 2.0
+
+
+async def test_hunt_warns_when_the_sequence_has_no_random_wait(tmp_path, caplog):
+    hunter = make_hunter(tmp_path, [summary_frame() for _ in range(3)] + [summary_frame(body=SHINY)] * 3)
+    with caplog.at_level('WARNING', logger='shinybot'):
+        await hunter.run()
+    assert 'no random wait' in caplog.text

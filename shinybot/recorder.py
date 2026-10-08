@@ -85,8 +85,10 @@ def merge_repeats(steps: list[Step], tolerance: float = 0.35) -> list[Step]:
             last.repeat += step.repeat
             last.hold = max(last.hold, step.hold)
             last.wait = max(last.wait, step.wait)
+            last.random_wait = max(last.random_wait, step.random_wait)
             if step.note and step.note not in last.note:
                 last.note = f'{last.note}; {step.note}' if last.note else step.note
         else:
-            merged.append(Step(step.press, step.hold, step.wait, step.repeat, step.note))
+            merged.append(Step(step.press, step.hold, step.wait, step.repeat, step.note,
+                               step.random_wait))
     return merged

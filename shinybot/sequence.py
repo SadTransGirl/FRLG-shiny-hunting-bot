@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 
@@ -16,6 +17,10 @@ class Step:
     wait: float = 0.5  # seconds to wait after releasing
     repeat: int = 1
     note: str = ''
+    # Up to this many extra seconds, picked at random every run, after the step.
+    # FireRed/LeafGreen's random seed and the starter depend on exact frame timing,
+    # so a bot with perfectly repeatable timing keeps getting the same few starters.
+    random_wait: float = 0.0
 
     @property
     def buttons(self) -> list[str]:
@@ -25,7 +30,7 @@ class Step:
     def from_dict(cls, data: dict) -> Step:
         step = cls(**data)
         step.buttons  # validate button names early
-        if step.repeat < 1 or step.hold < 0 or step.wait < 0:
+        if step.repeat < 1 or step.hold < 0 or step.wait < 0 or step.random_wait < 0:
             raise ValueError(f'invalid step {data}')
         return step
 
@@ -34,10 +39,12 @@ class Step:
 # saved in Oak's lab standing in front of the chosen Poke Ball, facing it.
 STARTER_SEQUENCE = [
     Step('A+B+PLUS+MINUS', hold=0.5, wait=5.0, note='soft reset'),
-    Step('PLUS', wait=5.0, note='skip intro to title screen'),
+    # The seed is taken when the title screen is left: wait a random time on it.
+    Step('PLUS', wait=5.0, random_wait=3.0, note='skip intro to title screen'),
     Step('PLUS', wait=2.5, note='title screen to main menu'),
     Step('A', wait=3.5, note='CONTINUE'),
-    Step('B', wait=1.5, note='skip "previously on your quest" recap'),
+    # The RNG advances every frame: stand a random time before taking the starter.
+    Step('B', wait=1.5, random_wait=3.0, note='skip "previously on your quest" recap'),
     # 3 x A covers 0-2 text boxes before the YES/NO question but stops before
     # the nickname question; B then advances text and answers that with NO.
     Step('A', wait=1.5, repeat=3, note='choose the Poke Ball, answer YES'),
@@ -57,6 +64,13 @@ def steps_to_config(steps: list[Step]) -> list[dict]:
     return [asdict(step) for step in steps]
 
 
+def has_random_wait(steps: list[Step]) -> bool:
+    return any(step.random_wait > 0 for step in steps)
+
+
+_random = random.SystemRandom()
+
+
 async def run_steps(
     controller,
     steps: list[Step],
@@ -66,9 +80,11 @@ async def run_steps(
     for index, step in enumerate(steps):
         for _ in range(step.repeat):
             await controller.press(*step.buttons, duration=step.hold, wait=step.wait)
+        if step.random_wait > 0:
+            await asyncio.sleep(_random.uniform(0, step.random_wait))
         if on_step:
             await on_step(index, step)
 
 
 def sequence_duration(steps: list[Step]) -> float:
-    return sum((s.hold + s.wait) * s.repeat for s in steps)
+    return sum((s.hold + s.wait) * s.repeat + s.random_wait / 2 for s in steps)

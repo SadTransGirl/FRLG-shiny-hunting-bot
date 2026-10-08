@@ -26,7 +26,8 @@ from .capture import FrameGrabber
 from .config import Config
 from .editor import SequenceEditor
 from .glass import GlassFrame, GlassLabel, GlassPage
-from .hunt import SETUP_FRAME, Hunter, HuntStopped
+from .hunt import NO_RANDOM_WAIT, SETUP_FRAME, Hunter, HuntStopped
+from .sequence import has_random_wait
 from .keymap import InputState, apply_to_controller
 from .recorder import Recorder
 
@@ -963,6 +964,9 @@ class App:
 
     def start_hunt(self) -> None:
         if not self._bot_ready():
+            return
+        if not has_random_wait(self.config.sequence) and not messagebox.askyesno(
+                'No random wait', NO_RANDOM_WAIT + '\n\nStart the hunt anyway?', icon='warning'):
             return
         try:
             self.hunter = Hunter(self.controller, self.frames, self.config, OUTPUT_DIR)

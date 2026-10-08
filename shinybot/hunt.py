@@ -17,12 +17,19 @@ import numpy as np
 from .config import Config
 from .detect import (CALIBRATION_MAX_FRACTION, CALIBRATION_MAX_SHIFT, CheckResult, RegionModel,
                      ShinyDetector, crop)
-from .sequence import run_steps
+from .sequence import has_random_wait, run_steps
 
 logger = logging.getLogger(__name__)
 
 SETUP_FRAME = 'setup_frame.png'
 CONFIRM_FRAMES = 2  # extra frames that must also look shiny before the hunt stops
+NO_RANDOM_WAIT = (
+    'The sequence has no random wait. FireRed/LeafGreen pick the starter from exact frame '
+    'timing, so with the same timing every reset you get the same few starters over and over '
+    'and may never see a shiny. In the sequence editor, set "Random +" to about 3 s on the '
+    'step that waits on the title screen and on a step where you stand in the lab before '
+    'taking the Poke Ball (the default Starter sequence does this).'
+)
 
 
 @contextlib.contextmanager
@@ -139,6 +146,8 @@ class Hunter:
 
     async def run(self) -> tuple[np.ndarray, CheckResult]:
         """Hunt until a shiny is found; returns its screenshot and check result."""
+        if not has_random_wait(self.config.sequence):
+            logger.warning(NO_RANDOM_WAIT)
         with keep_pc_awake():
             return await self._run()
 

@@ -13,10 +13,10 @@ from . import theme
 from .recorder import merge_repeats
 from .sequence import Step, sequence_duration
 
-COLUMNS = ('press', 'hold', 'wait', 'repeat', 'note')
+COLUMNS = ('press', 'hold', 'wait', 'random_wait', 'repeat', 'note')
 HEADINGS = {'press': 'Buttons', 'hold': 'Hold (s)', 'wait': 'Wait after (s)',
-            'repeat': 'Repeat', 'note': 'Note'}
-WIDTHS = {'press': 200, 'hold': 100, 'wait': 150, 'repeat': 90, 'note': 360}
+            'random_wait': 'Random + (s)', 'repeat': 'Repeat', 'note': 'Note'}
+WIDTHS = {'press': 200, 'hold': 100, 'wait': 150, 'random_wait': 140, 'repeat': 90, 'note': 330}
 
 
 def parse_cell(column: str, text: str):
@@ -26,7 +26,7 @@ def parse_cell(column: str, text: str):
         press = text.upper().replace(' ', '')
         Step(press).buttons  # raises ValueError for unknown buttons
         return press
-    if column in ('hold', 'wait'):
+    if column in ('hold', 'wait', 'random_wait'):
         value = float(text)
         if value < 0:
             raise ValueError('time must be 0 or more')
@@ -69,7 +69,9 @@ class SequenceEditor(ctk.CTkToplevel):
     def _build(self) -> None:
         ctk.CTkLabel(self, text=(
             'Double-click a cell to edit it (Tab = next cell, Enter = done, Esc = cancel). '
-            '"Wait after" is the pause after a press, before the next one.'),
+            '"Wait after" is the pause after a press, before the next one. "Random +" adds\n'
+            'a random extra pause (0 to that many seconds) so every reset gets a different '
+            'starter: put it on the title screen and in the lab before taking the Poke Ball.'),
             font=theme.F['small'], text_color=theme.TEXT_MUTED, anchor='w', justify='left').pack(
             fill='x', padx=14, pady=(10, 6))
         card = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=theme.RADIUS)
@@ -114,7 +116,8 @@ class SequenceEditor(ctk.CTkToplevel):
         self.tree.delete(*self.tree.get_children())
         for index, step in enumerate(self.steps):
             self.tree.insert('', 'end', iid=str(index), values=(
-                index + 1, step.press, f'{step.hold:g}', f'{step.wait:g}', step.repeat, step.note))
+                index + 1, step.press, f'{step.hold:g}', f'{step.wait:g}',
+                f'{step.random_wait:g}' if step.random_wait else '', step.repeat, step.note))
         if select is not None and self.steps:
             iid = str(max(0, min(select, len(self.steps) - 1)))
             self.tree.selection_set(iid)
