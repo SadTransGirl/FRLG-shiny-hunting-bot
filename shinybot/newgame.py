@@ -104,8 +104,9 @@ def rng_call(seed: int, n: int) -> int:
 
 
 # The TID is a CPU-cycle count, so keystrokes landing a frame or two differently move it by
-# tens; pressing OK a frame later moves it by ~18,800. Match the nearest planned TID.
-TID_TOLERANCE = 256
+# tens to hundreds; pressing OK a frame later moves it by ~17,000-22,000. Match the nearest
+# planned TID.
+TID_TOLERANCE = 512
 
 
 def tid_distance(a: int, b: int) -> int:
