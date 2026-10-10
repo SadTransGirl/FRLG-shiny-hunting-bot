@@ -164,3 +164,39 @@ python -m shinybot hunt
 
 Expect about 120 resets an hour. Starters are 1 in 8192 (full odds), so
 leave it running; it can take days.
+
+## Timed new game: finding your secret ID (SID)
+Shininess depends on your trainer ID (TID, on the trainer card) **and** a secret ID (SID)
+the game never shows. To plan a shiny with the emulator's RNG tools you need both. The
+game makes them like this:
+- leaving the naming screen sets your TID from a timer;
+- the random numbers then step every frame until Oak's speech ends;
+- the next value is your SID.
+
+A person can't time that to the frame, so the bot plays the new game on a schedule worked
+out in the emulator (`sloop-emu-pc`):
+
+1. On the PC, with the game files, make the plan (10-20 minutes; it plays the new game in
+   the emulator a few dozen times to check the schedule):
+   ```
+   python -m sloop.newgame plan --save game/save/LeafGreen_e.sav --name Naomi --gender girl --rival 1
+   ```
+   `--rival` is 1-4 for the preset names (LeafGreen: RED, ASH, KENE, GEKI) or a name to type.
+2. On the Switch: text speed **FAST** (START menu > OPTION), saved. The bot starts a
+   **NEW GAME**. Your old save stays until you save in the new game (the game asks before
+   overwriting).
+3. Run it (window: Hunt page > New game (SID) > Timed new game, or):
+   ```
+   python -m shinybot new-game --plan newgame_plan.json
+   ```
+   It soft resets, then presses every button at its planned moment, counted from the
+   title-screen press (so small delays never add up). Don't touch the Switch while it runs.
+   It ends on the trainer card and saves a picture of it.
+4. Type the IDNo. it shows. You get the possible SIDs, most likely first. The plan also
+   checks the bot's timing: it knows which TID each "OK pressed a few frames early/late"
+   would give, so the TID tells how many frames off the bot really was:
+   ```
+   python -m shinybot sid --plan newgame_plan.json --tid 12345
+   ```
+5. In the emulator's launcher (Trainer tab), make a save with that name, gender, TID and
+   SID, and plan the shiny starter on the RNG tab.

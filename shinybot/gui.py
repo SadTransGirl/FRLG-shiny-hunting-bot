@@ -13,7 +13,7 @@ import sys
 import threading
 import time
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import filedialog, messagebox, simpledialog
 
 import customtkinter as ctk
 import cv2
@@ -29,8 +29,10 @@ from .glass import GlassFrame, GlassLabel, GlassPage
 from .hunt import NO_RANDOM_WAIT, SETUP_FRAME, Hunter, HuntStopped
 from .sequence import has_random_wait
 from .keymap import InputState, apply_to_controller
+from .newgame import Plan, describe_candidates, run_plan
 from .recorder import Recorder
 
+BOT_JOBS = ('hunt', 'test', 'newgame')  # jobs that press the Switch's buttons themselves
 logger = logging.getLogger('shinybot.gui')
 
 SIDE_WIDTH = 320  # px (before display scaling) of the Hunt page's right column
@@ -356,6 +358,13 @@ class App:
                                          ('Screen box', lambda: self.mark_box('screen'), 'normal')]
                          ).pack(fill='x')
 
+        new_game = Card(side, 'New game (SID)')
+        new_game.pack(fill='x', pady=(12, 0))
+        label(new_game.body, 'A frame-timed new game from an emulator plan, then the SID from the '
+              'trainer card\'s IDNo.', muted=True, font='small', wrap=True).pack(fill='x', pady=(0, 6))
+        self._button_row(new_game.body, [('Timed new game', self.new_game, 'normal'),
+                                         ('SID from TID', self.sid_from_tid, 'normal')]).pack(fill='x')
+
     def _build_play(self, page) -> None:
         page.grid_columnconfigure(0, weight=1)
         page.grid_rowconfigure(1, weight=1)
@@ -550,7 +559,7 @@ class App:
             text, color = 'connected', theme.SUCCESS
         else:
             text, color = 'not connected', theme.TEXT_MUTED
-        if busy in ('hunt', 'test'):
+        if busy in BOT_JOBS:
             text += ' (bot is in control)'
         if self.status.text != text or self.status.color != color:
             self.status.set(text, color)
@@ -596,7 +605,7 @@ class App:
 
     def _manual_allowed(self) -> bool:
         return (self.controller is not None and self.controller.connected
-                and self._busy() not in ('hunt', 'test'))
+                and self._busy() not in BOT_JOBS)
 
     def _apply_input(self) -> None:
         buttons, stick = self.input.buttons(), self.input.stick()
@@ -608,7 +617,7 @@ class App:
             if (buttons or stick != (0.0, 0.0)) and not self._warned_no_input:
                 self._warned_no_input = True
                 logger.info('input ignored: %s', 'the bot is in control' if self._busy() in
-                            ('hunt', 'test') else 'controller not connected')
+                            BOT_JOBS else 'controller not connected')
             return
         self._warned_no_input = False
         self.worker.call(apply_to_controller, self.controller, buttons, stick)
@@ -976,6 +985,61 @@ class App:
             messagebox.showinfo('Not ready', str(error))
             return
         self._start_job('hunt', self.hunter.run, on_done=self._shiny_found)
+
+    # -- frame-timed new game (for the SID) ----------------------------------
+
+    def _load_plan(self) -> Plan | None:
+        path = filedialog.askopenfilename(title='New-game plan (python -m sloop.newgame plan)',
+                                          filetypes=[('Plan', '*.json'), ('All files', '*.*')])
+        if not path:
+            return None
+        try:
+            self.newgame_plan = Plan.load(path)
+        except (OSError, ValueError, KeyError) as error:
+            messagebox.showerror('New-game plan', f'Can\'t use {path}:\n{error}')
+            return None
+        return self.newgame_plan
+
+    def new_game(self) -> None:
+        if not self._bot_ready():
+            return
+        plan = self._load_plan()
+        if plan is None or not messagebox.askokcancel(
+                'Timed new game',
+                f'New game as {plan.name} ({plan.gender}), rival {plan.rival}: about '
+                f'{plan.duration() / 60:.0f} minutes.\n\n'
+                '- Text speed must be FAST in your Switch save, as in the plan.\n'
+                '- This starts a NEW GAME. Your old save stays until you save in the new game.\n'
+                '- Don\'t touch the Switch\'s controllers while it runs.', icon='warning'):
+            return
+
+        async def run():
+            def progress(done, total, _frame):
+                if done % 10 == 0 or done == total:
+                    logger.info('new game: press %d of %d', done, total)
+            late = await run_plan(self.controller, plan, progress)
+            await asyncio.sleep(2.0)
+            OUTPUT_DIR.mkdir(exist_ok=True)
+            cv2.imwrite(str(OUTPUT_DIR / 'new_game_trainer_card.png'), await asyncio.to_thread(self.frames.latest))
+            return late
+        self._start_job('newgame', run, on_done=self._new_game_done)
+
+    def _new_game_done(self, late) -> None:
+        logger.info('new game done: presses were up to %.2f frames late (average %.2f); the trainer '
+                    'card is saved in %s', max(late), sum(late) / len(late), OUTPUT_DIR)
+        self.sid_from_tid()
+
+    def sid_from_tid(self) -> None:
+        plan = getattr(self, 'newgame_plan', None) or self._load_plan()
+        if plan is None:
+            return
+        tid = simpledialog.askinteger('SID from TID', 'IDNo. on the trainer card:', minvalue=0,
+                                      maxvalue=65535, parent=self.root)
+        if tid is None:
+            return
+        text = describe_candidates(plan, tid)
+        logger.info('%s', text)
+        messagebox.showinfo('Possible SIDs', text + '\n\n(Also in the log.)')
 
     def stop_job(self) -> None:
         if self.job:

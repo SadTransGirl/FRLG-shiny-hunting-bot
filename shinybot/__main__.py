@@ -6,6 +6,10 @@
     python -m shinybot setup           mark the sprite and screen regions
     python -m shinybot hunt            start hunting
     python -m shinybot gui             open the window (controller pad + hunt buttons)
+    python -m shinybot new-game --plan newgame_plan.json
+                                       start a NEW GAME on a frame-exact schedule (for the SID)
+    python -m shinybot sid --plan newgame_plan.json --tid 12345
+                                       possible SIDs from the TID after that new game
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from .app import (OUTPUT_DIR, LoopWatchdog, alert, connect_controller, install_c
 from .capture import FrameGrabber, list_cameras
 from .config import CONFIG_FILE, Config
 from .hunt import SETUP_FRAME, Hunter, HuntStopped
+from .newgame import Plan, describe_candidates, run_plan
 from .sequence import sequence_duration
 
 MAX_WINDOW_WIDTH = 1280
@@ -126,13 +131,51 @@ async def cmd_hunt(config: Config) -> None:
         await controller.close()
 
 
+async def cmd_new_game(config: Config, plan: Plan) -> None:
+    print(f'New game as {plan.name} ({plan.gender}), rival {plan.rival}: about '
+          f'{plan.duration() / 60:.0f} minutes.\n'
+          '  * Text speed must be FAST in your Switch save (OPTION in the START menu), as in the plan.\n'
+          '  * This starts a NEW GAME. Your old save stays until you save in the new game.\n'
+          '  * Don\'t touch the Switch\'s controllers while it runs.')
+    await asyncio.to_thread(input, 'Press Enter to start (Ctrl+C to cancel)...')
+    controller = await connect_controller(config)
+    try:
+        with FrameGrabber(config.camera, *config.frame_size) as frames:
+            def progress(done, total, frame):
+                print(f'\r  press {done}/{total} (frame {frame})', end='', flush=True)
+            late = await run_plan(controller, plan, progress)
+            print()
+            await asyncio.sleep(2.0)
+            OUTPUT_DIR.mkdir(exist_ok=True)
+            card = OUTPUT_DIR / 'new_game_trainer_card.png'
+            cv2.imwrite(str(card), await asyncio.to_thread(frames.latest))
+        print(f'Done. Presses were up to {max(late):.2f} frames late (average {sum(late) / len(late):.2f}).')
+        print(f'The trainer card should be on screen (also saved to {card}).')
+    finally:
+        await controller.close()
+    tid = await asyncio.to_thread(input, 'Type the IDNo. from the trainer card: ')
+    print(describe_candidates(plan, int(tid)))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog='python -m shinybot', description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('command',
-                        choices=['cameras', 'preview', 'setup', 'test-sequence', 'hunt', 'gui'])
+                        choices=['cameras', 'preview', 'setup', 'test-sequence', 'hunt', 'gui',
+                                 'new-game', 'sid'])
     parser.add_argument('--camera', type=int, help='capture device number (saved to the config)')
+    parser.add_argument('--plan', default='newgame_plan.json', help='new-game plan from the emulator')
+    parser.add_argument('--tid', type=int, help='sid: the IDNo. on the trainer card')
+    parser.add_argument('--fps', type=float, help='new-game: frames a second on the Switch (default: the plan\'s, 60)')
     args = parser.parse_args()
+    if args.command == 'sid':
+        if args.tid is None:
+            sys.exit('sid needs --tid (the IDNo. on the trainer card)')
+        try:
+            print(describe_candidates(Plan.load(args.plan), args.tid))
+        except (OSError, ValueError, KeyError) as error:
+            sys.exit(f'Error: can\'t use the plan {args.plan}: {error}')
+        return
     if args.command == 'gui':
         from .gui import main as gui_main
 
@@ -156,11 +199,18 @@ def main() -> None:
             cmd_setup(config)
         elif args.command == 'test-sequence':
             asyncio.run(cmd_test_sequence(config))
+        elif args.command == 'new-game':
+            plan = Plan.load(args.plan)
+            if args.fps:
+                plan.fps = args.fps
+            asyncio.run(cmd_new_game(config, plan))
         else:
             asyncio.run(cmd_hunt(config))
     except KeyboardInterrupt:
         print('\nStopped.')
     except RuntimeError as error:
+        sys.exit(f'Error: {error}')
+    except (OSError, ValueError, KeyError) as error:
         sys.exit(f'Error: {error}')
 
 
