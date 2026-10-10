@@ -813,7 +813,7 @@ class App:
                 grabber.start()
             except Exception as error:
                 grabber.stop()
-                self.post(lambda: self._camera_failed(camera, error))
+                self.post(lambda error=error: self._camera_failed(camera, error))
                 return
             self.post(lambda: self._camera_opened(camera, grabber))
 
