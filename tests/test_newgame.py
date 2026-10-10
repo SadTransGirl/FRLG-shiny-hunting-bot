@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from shinybot.newgame import Plan, describe_candidates, rng_call, run_plan, sid_candidates
+from shinybot.newgame import Plan, describe_candidates, match_tid, rng_call, run_plan, sid_candidates
 
 
 def plan_data(**changes):
@@ -46,7 +46,7 @@ def test_sid_candidates():
     assert [c for _s, c, _w in on_time[:3]] == [1900, 1898, 1902]  # nearest first
     late, offset = sid_candidates(plan, 1234)  # OK pressed 2 frames late over 900 frames
     assert offset == 2 and late[0][1] == 1900 + 2 * 4  # 2 x 1800/900 = 4 frames, 2 calls each
-    assert 'not in the plan' in describe_candidates(plan, 999)
+    assert 'not in the plan' in describe_candidates(plan, 40000)
 
 
 class TimingController:
@@ -75,3 +75,11 @@ async def test_run_plan_times_every_press_from_the_title_press(tmp_path):
     assert len(late) == 3 and max(late) < 3
     releases = [b for kind, b, _t in controller.log if kind == 'release']
     assert releases == [('PLUS',), ('A',), ('DOWN',), ('A', 'B')]
+
+
+def test_tid_matches_the_nearest_planned_one():
+    table = {'28323': 0, '47100': 1, '65530': -1}
+    assert match_tid(table, 28323) == 0
+    assert match_tid(table, 28303) == 0      # keystrokes a little off move the TID by tens
+    assert match_tid(table, 5) == -1         # 65530 is 11 away across the wrap
+    assert match_tid(table, 40000) is None

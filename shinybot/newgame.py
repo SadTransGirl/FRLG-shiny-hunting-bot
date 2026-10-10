@@ -103,11 +103,27 @@ def rng_call(seed: int, n: int) -> int:
     return state >> 16
 
 
+# The TID is a CPU-cycle count, so keystrokes landing a frame or two differently move it by
+# tens; pressing OK a frame later moves it by ~18,800. Match the nearest planned TID.
+TID_TOLERANCE = 256
+
+
+def tid_distance(a: int, b: int) -> int:
+    d = (a - b) & 0xFFFF
+    return min(d, 0x10000 - d)
+
+
+def match_tid(table: dict[str, int], tid: int, tolerance: int = TID_TOLERANCE) -> int | None:
+    near = [(tid_distance(int(t), tid), offset) for t, offset in table.items()]
+    near = [n for n in near if n[0] <= tolerance]
+    return min(near)[1] if near else None
+
+
 def sid_candidates(plan: Plan, tid: int) -> tuple[list[tuple[int, int, str]], int | None]:
     """[(SID, RNG call, why)] most likely first, and how many frames off the bot was on the
-    naming screen (None if the TID isn't in the plan's table)."""
+    naming screen (None if the TID is near no planned one)."""
     data = plan.data
-    offset = data['tid_by_offset'].get(str(tid))
+    offset = match_tid(data['tid_by_offset'], tid)
     naming = data['naming']['ok'] - data['naming']['open']
     after = data['speech_end'] - data['naming']['ok']
     ends = {int(e): c for e, c in data['calls_by_end_offset'].items()}
