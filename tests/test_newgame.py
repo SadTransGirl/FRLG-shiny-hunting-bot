@@ -46,7 +46,7 @@ def test_sid_candidates():
     assert [c for _s, c, _w in on_time[:3]] == [1900, 1898, 1902]  # nearest first
     late, offset = sid_candidates(plan, 1234)  # OK pressed 2 frames late over 900 frames
     assert offset == 2 and late[0][1] == 1900 + 2 * 4  # 2 x 1800/900 = 4 frames, 2 calls each
-    assert 'not in the plan' in describe_candidates(plan, 40000)
+    assert 'not near a planned one' in describe_candidates(plan, 40000)
 
 
 class TimingController:

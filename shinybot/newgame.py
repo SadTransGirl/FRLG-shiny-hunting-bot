@@ -144,9 +144,8 @@ def sid_candidates(plan: Plan, tid: int) -> tuple[list[tuple[int, int, str]], in
 def describe_candidates(plan: Plan, tid: int) -> str:
     candidates, offset = sid_candidates(plan, tid)
     if offset is None:
-        head = (f'TID {tid:05d} is not in the plan\'s table: either the Switch counts the naming '
-                'screen differently from the emulator, or the bot was further off than the table '
-                'covers. These SIDs assume the bot was on time:')
+        head = (f'TID {tid:05d} is not near a planned one. That is normal when the keystrokes landed a '
+                'little differently (it moves the TID, not the SID). These assume the speech ended on time:')
     elif offset == 0:
         head = f'TID {tid:05d}: the bot pressed OK exactly on the planned frame. Most likely first:'
     else:
