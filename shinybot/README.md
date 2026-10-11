@@ -165,6 +165,22 @@ python -m shinybot hunt
 Expect about 120 resets an hour. Starters are 1 in 8192 (full odds), so
 leave it running; it can take days.
 
+## If it closes by itself
+Everything is written to `shinybot_output/`:
+- `hunt.log`: what the bot did, with times; every error with its traceback; every 30 minutes
+  how long it has run, its reset count and memory use.
+- `crash.log`: only the bad news: errors, crashes inside a driver (OpenCV, the capture card,
+  Bluetooth), and runs that vanished.
+- `session.json`: rewritten every 30 seconds while the bot runs, closed when it exits normally.
+  If the next start finds it still open, the bot shows what it was doing and when it was last
+  alive: no Python error stopped it, so Windows ended it (shutdown or an update restart, out of
+  memory, Task Manager) or it crashed in a driver (then `crash.log` has a dump). Windows Event
+  Viewer (Windows Logs > System / Application) around that time usually says which.
+- A heartbeat minutes late means the PC was asleep or the bot was frozen; the log says when.
+
+While a hunt runs the bot asks Windows not to sleep (the screen may still turn off). Windows
+Update can still restart the PC: pause updates while you hunt overnight.
+
 ## Timed new game: finding your secret ID (SID)
 Shininess depends on your trainer ID (TID, on the trainer card) **and** a secret ID (SID)
 the game never shows. To plan a shiny with the emulator's RNG tools you need both. The

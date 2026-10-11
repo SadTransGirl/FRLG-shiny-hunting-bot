@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import faulthandler
+import json
 import logging
+import os
 import sys
 import threading
 import time
@@ -55,6 +58,154 @@ def install_crash_logging() -> None:
 
     threading.excepthook = thread_error
     sys.excepthook = lambda *exc: logger.critical('unexpected error', exc_info=exc)
+    errors = logging.StreamHandler(_crash_file)  # crash.log: errors too, not only native crashes
+    errors.setLevel(logging.ERROR)
+    errors.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s'))
+    logging.getLogger().addHandler(errors)
+
+
+SESSION_FILE = OUTPUT_DIR / 'session.json'
+
+
+def memory_mb() -> float | None:
+    """This process's memory use (working set) in MB, or None if it can't be read."""
+    try:
+        import psutil
+        return psutil.Process().memory_info().rss / 2**20
+    except ImportError:
+        pass
+    if sys.platform == 'win32':
+        import ctypes
+        from ctypes import wintypes
+
+        class Counters(ctypes.Structure):
+            _fields_ = [('cb', wintypes.DWORD), ('PageFaultCount', wintypes.DWORD)] + [
+                (name, ctypes.c_size_t) for name in (
+                    'PeakWorkingSetSize', 'WorkingSetSize', 'QuotaPeakPagedPoolUsage', 'QuotaPagedPoolUsage',
+                    'QuotaPeakNonPagedPoolUsage', 'QuotaNonPagedPoolUsage', 'PagefileUsage', 'PeakPagefileUsage')]
+        counters = Counters()
+        counters.cb = ctypes.sizeof(counters)
+        process = ctypes.windll.kernel32.GetCurrentProcess()
+        if ctypes.windll.kernel32.K32GetProcessMemoryInfo(process, ctypes.byref(counters), counters.cb):
+            return counters.WorkingSetSize / 2**20
+        return None
+    try:
+        with open('/proc/self/statm') as f:
+            return int(f.read().split()[1]) * os.sysconf('SC_PAGE_SIZE') / 2**20
+    except (OSError, ValueError):
+        return None
+
+
+def keep_awake(on: bool) -> None:
+    """While hunting, ask Windows not to sleep (the screen may still turn off). No-op elsewhere."""
+    if sys.platform != 'win32':
+        return
+    import ctypes
+    ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+    ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | (ES_SYSTEM_REQUIRED if on else 0))
+
+
+def _clock(stamp: float) -> str:
+    return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(stamp))
+
+
+def _span(seconds: float) -> str:
+    minutes = int(seconds // 60)
+    return f'{minutes // 60}h{minutes % 60:02d}m' if minutes >= 60 else f'{minutes}m{int(seconds % 60):02d}s'
+
+
+class SessionMonitor:
+    """Leaves a trail, so a run that dies without a Python error still explains itself.
+
+    session.json is rewritten every `interval` seconds (time, what the bot is doing, memory)
+    and marked closed when the program exits normally. If the next start finds it open, the
+    process was killed (the PC shut down, restarted for an update or ran out of memory, or
+    Task Manager ended it) or crashed inside native code (then crash.log has a dump), and that
+    gets reported. A heartbeat that comes far too late means the PC slept or the bot froze.
+    """
+
+    def __init__(self, path: Path = SESSION_FILE, interval: float = 30.0) -> None:
+        self.path, self.interval = Path(path), interval
+        self.state = 'starting'
+        self.started = time.time()
+        self.peak_mb = 0.0
+        self._lock = threading.Lock()
+        self._closed = False
+        self.previous = self.check_previous()
+        self.beat()
+        atexit.register(self.end, 'the program exited')
+        self._stop = threading.Event()
+        threading.Thread(target=self._run, name='session', daemon=True).start()
+
+    def check_previous(self) -> str | None:
+        """The report on an earlier run that ended without closing its session (also logged)."""
+        try:
+            last = json.loads(self.path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return None
+        if last.get('closed'):
+            return None
+        started, beat = last.get('started', 0), last.get('last_beat', 0)
+        memory = f', memory {last["memory_mb"]:.0f} MB (peak {last.get("peak_mb", 0):.0f})' if last.get('memory_mb') else ''
+        report = (f'The previous run (started {_clock(started)}) ended without closing normally. '
+                  f'Last sign of life: {_clock(beat)}, {_span(beat - started)} in, while '
+                  f'"{last.get("state", "?")}"{memory}. No Python error stopped it, so the program was '
+                  'killed or crashed inside a driver: the PC shut down or restarted (Windows Update), '
+                  'ran out of memory, or Task Manager ended it. Check crash.log for a native '
+                  'crash dump, and Windows Event Viewer > Windows Logs > System/Application around that time.')
+        logger.error(report)
+        return report
+
+    def set_state(self, state: str) -> None:
+        self.state = state
+
+    def beat(self) -> None:
+        memory = memory_mb()
+        if memory:
+            self.peak_mb = max(self.peak_mb, memory)
+        self._write({'pid': os.getpid(), 'started': self.started, 'last_beat': time.time(),
+                     'state': self.state, 'memory_mb': memory, 'peak_mb': self.peak_mb, 'closed': False})
+
+    def end(self, reason: str) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._stop_thread()
+        self._write({'pid': os.getpid(), 'started': self.started, 'last_beat': time.time(),
+                     'state': self.state, 'peak_mb': self.peak_mb, 'closed': True, 'reason': reason})
+        logger.info('session closed: %s after %s', reason, _span(time.time() - self.started))
+
+    def _stop_thread(self) -> None:
+        stop = getattr(self, '_stop', None)
+        if stop is not None:
+            stop.set()
+
+    def _write(self, record: dict) -> None:
+        with self._lock:
+            try:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                temp = self.path.with_suffix('.tmp')
+                temp.write_text(json.dumps(record), encoding='utf-8')
+                os.replace(temp, self.path)  # never a half-written file, even if killed mid-write
+            except OSError as error:
+                logger.warning('could not write %s: %s', self.path, error)
+
+    def _run(self) -> None:
+        last = time.time()
+        report_every, since_report = 30 * 60, 0.0
+        while not self._stop.wait(self.interval):
+            now = time.time()
+            if now - last > max(3 * self.interval, 120):
+                logger.warning('no heartbeat from %s to %s (%s): the PC was probably asleep, or the '
+                               'program was frozen', _clock(last), _clock(now), _span(now - last))
+            since_report += now - last
+            last = now
+            self.beat()
+            if since_report >= report_every:
+                since_report = 0.0
+                memory = memory_mb()
+                logger.info('still running after %s: %s%s', _span(now - self.started), self.state,
+                            f', memory {memory:.0f} MB' if memory else '')
 
 
 def _thread_stacks() -> str:

@@ -19,8 +19,8 @@ import customtkinter as ctk
 import cv2
 
 from . import theme
-from .app import (BEEPS, OUTPUT_DIR, LoopWatchdog, alert, alert_sound_path, install_crash_logging,
-                  open_controller, run_test_sequence, setup_logging)
+from .app import (BEEPS, OUTPUT_DIR, LoopWatchdog, SessionMonitor, alert, alert_sound_path, install_crash_logging,
+                  keep_awake, open_controller, run_test_sequence, setup_logging)
 from .audio import AudioPassthrough, guess_capture_device, list_inputs
 from .capture import FrameGrabber
 from .config import Config
@@ -192,7 +192,9 @@ class Video(GlassFrame):
 class App:
     NO_AUDIO = '(off)'
 
-    def __init__(self, root: ctk.CTk, config: Config) -> None:
+    def __init__(self, root: ctk.CTk, config: Config, session: SessionMonitor | None = None) -> None:
+        self.session = session
+        self._awake = False
         self.root = root
         self.config = config
         self.worker = AsyncWorker()
@@ -571,6 +573,13 @@ class App:
             self._set_pill(self.sound_pill, 'Muted', '#2a0b10', theme.DANGER)
         else:
             self._set_pill(self.sound_pill, 'Sound', theme.SUCCESS)
+        hunting = busy == 'hunt'
+        if hunting != self._awake:
+            self._awake = hunting
+            keep_awake(hunting)
+        if self.session:
+            resets = f', {self.hunter.stats.resets} resets' if self.hunter else ''
+            self.session.set_state(f'{busy or "idle"}{resets}')
         if self.hunter:
             last = self.hunter.last_result
             resets = str(self.hunter.stats.resets)
@@ -1062,6 +1071,9 @@ class App:
 
     def close(self) -> None:
         logger.info('window closed')
+        keep_awake(False)
+        if self.session:
+            self.session.end('window closed')
         self.stop_job()
 
         async def shutdown():
@@ -1084,6 +1096,7 @@ def main(camera: int | None = None) -> None:
     theme.set_app_id()
     setup_logging(console=sys.stderr is not None)
     install_crash_logging()
+    session = SessionMonitor()
     logger.info('ShinyBot started')
     config = Config.load()
     if camera is not None:
@@ -1091,7 +1104,12 @@ def main(camera: int | None = None) -> None:
     root = ctk.CTk(fg_color=theme.BG)
     root.title('Shiny Bot - FireRed / LeafGreen')
     fit_to_screen(root)
-    App(root, config)
+    App(root, config, session)
+    if session.previous:  # the last run vanished: say so where it's seen
+        root.after(800, lambda: messagebox.showwarning(
+            'ShinyBot closed unexpectedly last time',
+            session.previous + f'\n\nDetails: {OUTPUT_DIR / "hunt.log"} and {OUTPUT_DIR / "crash.log"}.',
+            parent=root))
     root.mainloop()
 
 
