@@ -75,15 +75,19 @@ async def run_steps(
     controller,
     steps: list[Step],
     on_step: Callable[[int, Step], Awaitable[None]] | None = None,
-) -> None:
-    """Press each step's buttons; `on_step` runs after every step (e.g. to screenshot)."""
+) -> list[float]:
+    """Press each step's buttons; `on_step` runs after every step (e.g. to screenshot).
+    Returns the random waits it picked, in seconds (one per step that has one)."""
+    waits = []
     for index, step in enumerate(steps):
         for _ in range(step.repeat):
             await controller.press(*step.buttons, duration=step.hold, wait=step.wait)
         if step.random_wait > 0:
-            await asyncio.sleep(_random.uniform(0, step.random_wait))
+            waits.append(_random.uniform(0, step.random_wait))
+            await asyncio.sleep(waits[-1])
         if on_step:
             await on_step(index, step)
+    return waits
 
 
 def sequence_duration(steps: list[Step]) -> float:

@@ -86,6 +86,10 @@ class FakeFrames:
     def latest(self):
         return self.frames.pop(0)
 
+    def latest_pair(self):
+        frame = self.latest()
+        return frame, frame.copy()
+
 
 def make_hunter(tmp_path, frames, **config_changes):
     config = Config(sprite_box=SPRITE_BOX, screen_box=SCREEN_BOX,

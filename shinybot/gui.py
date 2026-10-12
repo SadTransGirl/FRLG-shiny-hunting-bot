@@ -42,6 +42,7 @@ SOFT_RESET = ('A', 'B', 'PLUS', 'MINUS')
 # Ignore a key release if the same key is pressed again within this many ms
 # (X11 sends release/press pairs for auto-repeat).
 RELEASE_DEBOUNCE_MS = 40
+LOG_LINES = 2000  # lines kept in the log box (the log file keeps everything)
 
 # (label, button, row, column, uses symbol font) of the on-screen controller
 PAD_LAYOUT = [
@@ -166,7 +167,11 @@ class Video(GlassFrame):
         self.view = (self.S(320), self.S(180))
         self.on_resize = on_resize
         self.canvas = tk.Canvas(self, bg=theme.SIDEBAR, highlightthickness=0, bd=0)
-        self.image_item = self.canvas.create_image(0, 0, anchor='nw')
+        # One picture, rewritten in place each frame. Making a new PhotoImage per frame deletes
+        # the old one while the canvas still shows it, which crashed Tk on Windows after hours
+        # ("Windows fatal exception: access violation" in itemconfigure).
+        self.photo = tk.PhotoImage(master=self.canvas)
+        self.image_item = self.canvas.create_image(0, 0, anchor='nw', image=self.photo)
         self.text_item = self.canvas.create_text(0, 0, fill=theme.TEXT_MUTED, text='no camera',
                                                  font=F('body'))
         self.bind('<Configure>', lambda _e: self.fit(), add='+')
@@ -208,7 +213,6 @@ class App:
         self._frame = None
         self._frame_time = 0.0
         self._scale = 1.0
-        self._photo = None
         self._box_mode: str | None = None
         self._drag_start: tuple[int, int] | None = None
         self._warned_no_input = False
@@ -339,7 +343,10 @@ class App:
         self.resets_label = label(stats, '0', font='big', color=theme.ACCENT)
         self.resets_label.pack(anchor='w', padx=14)
         self.hunt_status = label(stats, 'not hunting', muted=True, font='small', wrap=True)
-        self.hunt_status.pack(fill='x', padx=14, pady=(0, 8))
+        self.hunt_status.pack(fill='x', padx=14, pady=(0, 2))
+        # Whether resets land on new seeds: the share that showed a different starter.
+        self.seed_label = label(stats, '', muted=True, font='small', wrap=True)
+        self.seed_label.pack(fill='x', padx=14, pady=(0, 8))
         self._button_row(hunt.body, [('Start hunt', self.start_hunt, 'primary'),
                                      ('Stop', self.stop_job, 'danger')]).pack(fill='x')
 
@@ -531,6 +538,8 @@ class App:
     def append_log(self, message: str) -> None:
         self.log.configure(state='normal')
         self.log.insert('end', message + '\n')
+        if int(self.log.index('end-1c').split('.')[0]) > LOG_LINES:  # long hunts: keep it bounded
+            self.log.delete('1.0', f'end-{LOG_LINES}l')
         self.log.see('end')
         self.log.configure(state='disabled')
 
@@ -589,6 +598,13 @@ class App:
             status = f'{state}  -  last: {last.verdict}' if last else state
             if self.hunt_status.text != status:
                 self.hunt_status.set(status)
+            check = self.hunter.seed_check
+            if check.recent:
+                new = len(check.recent) - sum(check.recent)
+                seeds = f'new starter: {new} of last {len(check.recent)}'
+                color = theme.WARNING if check.verdict() else theme.TEXT_MUTED
+                if self.seed_label.text != seeds or self.seed_label.color != color:
+                    self.seed_label.set(seeds, color)
 
     async def _ensure_controller(self):
         if self.controller is None:
@@ -870,8 +886,7 @@ class App:
         ok, ppm = cv2.imencode('.ppm', small)
         if not ok:
             return
-        self._photo = tk.PhotoImage(data=ppm.tobytes(), format='PPM')
-        video.canvas.itemconfigure(video.image_item, image=self._photo)
+        video.photo.configure(data=ppm.tobytes(), format='PPM')
         if video is self.hunt_video:
             self._scale = view_w / width
             self._draw_boxes()

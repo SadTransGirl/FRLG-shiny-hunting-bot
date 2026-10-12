@@ -84,8 +84,11 @@ class _Glass:
         if self.tint and self.alpha > 0:
             img = _rounded_tint(img, self.tint, self.alpha, self.S(self.radius), self.border)
         self.image = img
-        self._photo = ImageTk.PhotoImage(img)
-        self.itemconfigure(self._image_item, image=self._photo)
+        # Point the item at the new picture before the old one is dropped (deleting a Tk image
+        # a canvas still shows is a crash path on Windows).
+        photo = ImageTk.PhotoImage(img)
+        self.itemconfigure(self._image_item, image=photo)
+        self._photo = photo
         self.tag_lower(self._image_item)
         self._match_children()
 

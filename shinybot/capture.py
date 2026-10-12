@@ -86,6 +86,12 @@ class FrameGrabber:
                 raise RuntimeError(f'no new frame from camera {self.camera} for {timeout:.0f}s')
             return self._frame.copy()
 
+    def latest_pair(self, timeout: float = 2.0) -> tuple[np.ndarray, np.ndarray]:
+        """Two consecutive new frames: the screen, and the same screen again (the difference
+        between them is the capture's noise)."""
+        first = self.latest(timeout)
+        return first, self.latest(timeout)
+
     def peek(self) -> tuple[float, np.ndarray | None]:
         """The newest frame and its capture time, without waiting (for live previews)."""
         with self._lock:

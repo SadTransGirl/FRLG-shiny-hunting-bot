@@ -18,11 +18,13 @@ from .config import Config
 from .detect import (CALIBRATION_MAX_FRACTION, CALIBRATION_MAX_SHIFT, CheckResult, RegionModel,
                      ShinyDetector, crop)
 from .sequence import has_random_wait, run_steps
+from .variety import Comparison, SeedCheck
 
 logger = logging.getLogger(__name__)
 
 SETUP_FRAME = 'setup_frame.png'
 CONFIRM_FRAMES = 2  # extra frames that must also look shiny before the hunt stops
+SEED_SUMMARY_EVERY = 100  # resets between "seed check" lines in the log
 NO_RANDOM_WAIT = (
     'The sequence has no random wait. FireRed/LeafGreen pick the starter from exact frame '
     'timing, so with the same timing every reset you get the same few starters over and over '
@@ -82,6 +84,9 @@ class Hunter:
         self.detector = ShinyDetector(config.sprite_box, config.screen_box, config.sensitivity)
         self.expected_screen = self._load_expected_screen()
         self.last_result: CheckResult | None = None
+        self.seed_check = SeedCheck(config.sprite_box, output_dir / 'resets.csv')
+        self.last_waits: list[float] = []
+        self.last_again: np.ndarray | None = None
 
     def _load_expected_screen(self) -> RegionModel | None:
         setup = cv2.imread(str(self.output_dir / SETUP_FRAME))
@@ -107,8 +112,8 @@ class Hunter:
     async def attempt(self) -> np.ndarray:
         """One soft reset through to the summary screen; returns the screenshot."""
         await self._ensure_connected()
-        await run_steps(self.controller, self.config.sequence)
-        frame = await asyncio.to_thread(self.frames.latest)
+        self.last_waits = await run_steps(self.controller, self.config.sequence)
+        frame, self.last_again = await asyncio.to_thread(self.frames.latest_pair)
         self.stats.resets += 1
         self.stats.save(self.stats_path)
         self._save('last_check.png', frame)
@@ -131,6 +136,16 @@ class Hunter:
         if warnings:
             raise HuntStopped('calibration looks unreliable: ' + '; '.join(warnings))
         logger.info('calibration done')
+
+    def _report_seed_check(self, session_resets: int) -> None:
+        warning = self.seed_check.verdict()
+        if warning and not self.seed_check.warned:
+            self.seed_check.warned = True
+            logger.warning(warning)
+        elif not warning:
+            self.seed_check.warned = False  # warn again if it comes back
+        if session_resets % SEED_SUMMARY_EVERY == 0:
+            logger.info(self.seed_check.summary())
 
     async def _confirm_shiny(self, frame: np.ndarray) -> bool:
         """A shiny stays shiny in every frame; capture noise doesn't. Check a few more."""
@@ -162,7 +177,13 @@ class Hunter:
             result = self.detector.check(frame)
             self.last_result = result
             rate = session_resets / max(1e-9, time.monotonic() - started) * 3600
-            logger.info('reset %d: %s [%.0f resets/hour]', self.stats.resets, result, rate)
+            # A wrong screen isn't a starter: leave it out of the comparison.
+            seed = (Comparison(0, 0, None) if result.verdict == 'wrong_screen'
+                    else self.seed_check.add(frame, self.last_again))
+            self.seed_check.record(self.stats.resets, self.last_waits, result.verdict, seed)
+            logger.info('reset %d: %s [%.0f resets/hour]%s', self.stats.resets, result, rate,
+                        ' (same summary screen as the last reset)' if seed.same else '')
+            self._report_seed_check(session_resets)
             if self.config.save_every_encounter:
                 self._save(f'encounter_{self.stats.resets:06d}.png', frame)
 

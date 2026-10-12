@@ -76,6 +76,20 @@ ends on the title screen, and give that one the random wait. Start hunt warns
 you if the sequence has no random wait. Each reset is about 5 s longer on
 average.
 
+**Checking it works (seed check).** The bot can't read the Switch's RNG, but it sees what
+the RNG makes: the summary screen shows the starter's nature and gender. Every reset is
+compared with the one before (leaving out the sprite, so a shiny doesn't count). Two different
+starters show the same screen only when nature and gender happen to agree, about 3% of the
+time; resets stuck on the same few seeds would match nearly every time. The Hunt page shows
+"new starter: N of last 100", the log has a "seed check" line every 100 resets, and the bot
+warns if more than 25% of resets repeat the previous screen. `shinybot_output/resets.csv`
+has one row per reset: the random waits it picked, the verdict and the comparison.
+
+How many seeds the waits reach: every frame on the title screen gives a different seed (the
+port measured jumps of 18,800-27,400 per frame), so 5 s of random wait is about 300 seeds, and
+5 s of standing in the lab about 300 starters from each: around 90,000 different starters,
+each shiny with the usual 1 in 8,192.
+
 Tips: press one button at a time (buttons pressed together are recorded as a
 chord, which is how the soft reset is recorded). Stick movements aren't
 recorded, so use the D-pad. If a step is flaky when replayed, add a little
