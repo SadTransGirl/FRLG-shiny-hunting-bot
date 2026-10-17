@@ -83,10 +83,15 @@ def memory_mb() -> float | None:
                 (name, ctypes.c_size_t) for name in (
                     'PeakWorkingSetSize', 'WorkingSetSize', 'QuotaPeakPagedPoolUsage', 'QuotaPagedPoolUsage',
                     'QuotaPeakNonPagedPoolUsage', 'QuotaNonPagedPoolUsage', 'PagefileUsage', 'PeakPagefileUsage')]
+        # Declare the types: undeclared, ctypes passes the 64-bit process handle (-1, "this
+        # process") as a 32-bit int, the call fails and the memory was never logged.
+        kernel32 = ctypes.WinDLL('kernel32')  # own copy: leaves windll.kernel32's prototypes alone
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel32.K32GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+        kernel32.K32GetProcessMemoryInfo.restype = wintypes.BOOL
         counters = Counters()
         counters.cb = ctypes.sizeof(counters)
-        process = ctypes.windll.kernel32.GetCurrentProcess()
-        if ctypes.windll.kernel32.K32GetProcessMemoryInfo(process, ctypes.byref(counters), counters.cb):
+        if kernel32.K32GetProcessMemoryInfo(kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
             return counters.WorkingSetSize / 2**20
         return None
     try:
