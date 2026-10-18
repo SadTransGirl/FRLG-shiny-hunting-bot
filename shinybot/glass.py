@@ -255,6 +255,91 @@ class GlassFrame(_Glass, tk.Canvas):
         self.page.register(self)
 
 
+class GlassScroll(GlassFrame):
+    """A see-through area that scrolls (mouse wheel, thin bar on the right) when its content
+    is taller than the space it gets, and otherwise stretches the content to fill it, so
+    layouts that expand still do. Put the content in .inner.
+
+    The content is moved, not the view: the glass inside then repaints from the wallpaper
+    behind its new position, so the wallpaper stays still while the panels slide over it.
+    """
+
+    BAR = 5  # px (before scaling) of the scroll bar
+
+    def __init__(self, master, **kw) -> None:
+        super().__init__(master, **kw)
+        self.configure(width=1, height=1)  # size comes from the layout, not the content
+        self.inner = GlassFrame(self)
+        self._window = self.create_window(0, 0, window=self.inner, anchor='nw')
+        self._bar = self.create_rectangle(0, 0, 0, 0, fill=theme.TEXT_MUTED, width=0, state='hidden')
+        self.offset = 0
+        self.bind('<Configure>', lambda _e: self._layout(), add='+')
+        self.inner.bind('<Configure>', lambda _e: self._layout(), add='+')
+        self._content = 0
+        self.after(300, self._watch)
+        top = self.winfo_toplevel()
+        for sequence in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
+            top.bind(sequence, self._wheel, add='+')
+
+    def _watch(self) -> None:
+        """Tk sends no event when the content's requested height changes (text wraps, a label
+        appears), and the content is sized by its canvas window: check now and then."""
+        if not self.winfo_exists():
+            return
+        content = self.inner.winfo_reqheight()
+        if content != self._content:
+            self._content = content
+            self._layout()
+        self.after(300, self._watch)
+
+    @property
+    def overflow(self) -> int:
+        """How many px of content don't fit (0 = no scrolling)."""
+        return max(0, self.inner.winfo_reqheight() - self.winfo_height())
+
+    def _layout(self) -> None:
+        width, height = self.winfo_width(), self.winfo_height()
+        if width < 2 or height < 2:
+            return
+        content = self.inner.winfo_reqheight()
+        overflow = max(0, content - height)
+        gutter = self.S(self.BAR + 5) if overflow else 0
+        self.offset = min(self.offset, overflow)
+        self.itemconfigure(self._window, width=width - gutter, height=max(content, height))
+        self.coords(self._window, 0, -self.offset)
+        if overflow:
+            bar = self.S(self.BAR)
+            length = max(self.S(24), height * height // content)
+            top = (height - length) * self.offset // overflow
+            self.coords(self._bar, width - bar, top, width, top + length)
+            self.itemconfigure(self._bar, state='normal')
+            self.tag_raise(self._bar)
+        else:
+            self.itemconfigure(self._bar, state='hidden')
+
+    def scroll(self, pixels: int) -> None:
+        offset = max(0, min(self.offset + pixels, self.overflow))
+        if offset != self.offset:
+            self.offset = offset
+            self._layout()
+            self.page.schedule(self.inner)  # the glass inside is now over other wallpaper
+
+    def _wheel(self, event) -> None:
+        if not self.overflow or not self.winfo_ismapped():
+            return
+        try:
+            widget = self.winfo_containing(event.x_root, event.y_root)
+        except (KeyError, tk.TclError):  # a Tk-internal window with no Python widget
+            return
+        if widget is None or not _inside(widget, self):
+            return
+        if event.num in (4, 5):  # X11
+            steps = -1 if event.num == 4 else 1
+        else:  # Windows: 120 a notch (finer on touchpads)
+            steps = -event.delta / 120
+        self.scroll(int(steps * self.S(48)) or (1 if steps > 0 else -1))
+
+
 class GlassLabel(_Glass, tk.Canvas):
     """Text drawn over the backdrop (with a soft shadow so it reads on any picture).
 

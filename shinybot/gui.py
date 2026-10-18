@@ -25,7 +25,7 @@ from .audio import AudioPassthrough, guess_capture_device, list_inputs
 from .capture import FrameGrabber
 from .config import Config
 from .editor import SequenceEditor
-from .glass import GlassFrame, GlassLabel, GlassPage
+from .glass import GlassFrame, GlassLabel, GlassPage, GlassScroll
 from .hunt import NO_RANDOM_WAIT, SETUP_FRAME, Hunter, HuntStopped
 from .sequence import has_random_wait
 from .keymap import InputState, apply_to_controller
@@ -273,8 +273,11 @@ class App:
             page = GlassPage(content, wallpaper)
             page.configure(width=1, height=1)  # size comes from the window, not the content
             page.grid(row=0, column=0, sticky='nsew')
-            inner = Row(page)  # page margins
-            inner.pack(fill='both', expand=True, padx=16, pady=14)
+            # Page margins. Hunt keeps its video in place and scrolls only its side column;
+            # the other pages scroll whole when the window is too short (high display scaling).
+            area = Row(page) if key == 'hunt' else GlassScroll(page)
+            area.pack(fill='both', expand=True, padx=16, pady=14)
+            inner = area if key == 'hunt' else area.inner
             self.pages[key] = page
             button = ctk.CTkButton(nav, text=text, compound='top', width=88, height=80, corner_radius=12,
                                    image=theme.icon(key, 30), fg_color='transparent',
@@ -332,8 +335,9 @@ class App:
         self.log.pack(fill='both', expand=True)
         self.log.configure(state='disabled')
 
-        side = Row(page)
-        side.grid(row=1, column=1, rowspan=2, sticky='nsew')
+        side_scroll = GlassScroll(page)  # scrolls when the cards don't fit (e.g. 300% scaling)
+        side_scroll.grid(row=1, column=1, rowspan=2, sticky='nsew')
+        side = side_scroll.inner
         hunt = Card(side)
         hunt.pack(fill='x')
         hunt.body.pack_configure(pady=hunt.S((14, 14)))
