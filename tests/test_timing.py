@@ -78,3 +78,20 @@ def test_timing_test_runs_the_sequence_and_saves_each_starter(tmp_path):
     assert sorted(p.name for p in tmp_path.glob('timing_starter_*.png')) == ['timing_starter_1.png',
                                                                            'timing_starter_2.png']
     assert sum(1 for kind, *_ in controller.events if kind == 'hold') == 8
+
+
+class AlwaysDiffers:
+    def differs(self, _region):
+        return True
+
+
+def test_timing_test_stops_when_resets_miss_the_summary_screen(tmp_path):
+    from shinybot.hunt import HuntStopped
+    from shinybot.timing import WRONG_IN_A_ROW
+    steps = [Step('A', hold=0.01, wait=0.01)]
+    frames = ScreenFrames([('BOLD', True, 2 * i) for i in range(10)])
+    with pytest.raises(HuntStopped, match='in a row didn.t end on the summary screen'):
+        asyncio.run(timing_test(HoldController(), frames, steps, SPRITE_BOX, tmp_path, resets=10,
+                                expected_screen=AlwaysDiffers(), screen_box=(0, 0, 50, 50)))
+    assert len(frames.screens) == 10 - WRONG_IN_A_ROW
+    assert StarterGroups(SPRITE_BOX).verdict()[1].startswith('No reset ended on the summary screen')

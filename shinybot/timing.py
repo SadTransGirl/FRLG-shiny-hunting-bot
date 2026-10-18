@@ -24,6 +24,7 @@ import cv2
 import numpy as np
 
 from .detect import crop
+from .hunt import HuntStopped
 from .newgame import _sleep_until
 from .sequence import Step
 from .variety import MIN_CHANGED, NOISE_FACTOR, changed_pixels, signature
@@ -31,6 +32,7 @@ from .variety import MIN_CHANGED, NOISE_FACTOR, changed_pixels, signature
 logger = logging.getLogger(__name__)
 
 REPEATABLE_SHARE = 0.25     # groups <= this share of resets: repeatable
+WRONG_IN_A_ROW = 3          # resets in a row off the summary screen: stop
 RANDOM_SHARE = 0.5          # groups >= this share: not repeatable
 
 
@@ -98,6 +100,10 @@ class StarterGroups:
         """('repeatable' | 'random' | 'unclear', explanation)."""
         resets, groups = self.resets, len(self.counts)
         counts = ', '.join(str(c) for c in sorted(self.counts, reverse=True))
+        if resets == 0:
+            return 'unclear', ('No reset ended on the summary screen, so there was nothing to compare. '
+                               'Load your hunting save (standing at the Poke Ball) and check the sequence '
+                               'with Test first.')
         head = f'{resets} resets with the same timing gave {groups} different starter screens ({counts}).'
         if resets < 8:
             return 'unclear', head + ' Too few resets to tell: run at least 20.'
@@ -121,6 +127,7 @@ async def timing_test(controller, frames, steps: list[Step], sprite_box, output_
     output_dir.mkdir(parents=True, exist_ok=True)
     schedule, end = fixed_schedule(steps), schedule_end(steps)
     groups = StarterGroups(sprite_box)
+    wrong = 0
     for number in range(1, resets + 1):
         late = await run_schedule(controller, schedule, end)
         frame, again = await asyncio.to_thread(frames.latest_pair)
@@ -128,7 +135,13 @@ async def timing_test(controller, frames, steps: list[Step], sprite_box, output_
             path = output_dir / f'timing_wrong_screen_{number}.png'
             cv2.imwrite(str(path), frame)
             logger.warning('timing test %d/%d: not on the summary screen (%s); left out', number, resets, path)
+            wrong += 1
+            if wrong >= WRONG_IN_A_ROW:
+                raise HuntStopped(
+                    f'timing test: {wrong} resets in a row didn\'t end on the summary screen (see {path}). '
+                    'Is the hunting save loaded (standing at the Poke Ball)? Check the sequence with Test.')
             continue
+        wrong = 0
         group, new = groups.add(frame, again)
         if new:
             cv2.imwrite(str(output_dir / f'timing_starter_{group + 1}.png'), frame)
