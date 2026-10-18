@@ -85,17 +85,20 @@ time; resets stuck on the same few seeds would match nearly every time. The Hunt
 warns if more than 25% of resets repeat the previous screen. `shinybot_output/resets.csv`
 has one row per reset: the random waits it picked, the verdict and the comparison.
 
-How many seeds the waits reach: every frame on the title screen gives a different seed (the
-port measured jumps of 18,800-27,400 per frame), so 5 s of random wait is about 300 seeds, and
-5 s of standing in the lab about 300 starters from each: around 90,000 different starters,
-each shiny with the usual 1 in 8,192.
+How many seeds the waits reach: in the emulator every frame on the title screen gives a
+different seed (jumps of 18,800-27,400 per frame), so 5 s of random wait is about 300 seeds.
+On a real Switch it's more random than that: the timing test (below) gave 17 different
+starters in 30 resets with identical timing, and two frame-perfect new games gave TIDs ~4,000
+apart. The Switch's timer doesn't land on the same count twice, so every reset gets an
+effectively random seed and the odds are the usual 1 in 8,192 for any trainer. The random
+waits are kept anyway: they cost a few seconds a reset and rule out any leftover pattern.
 
 **Timing test (before aiming at a planned shiny).** Sequence > **Timing** (or `python -m
 shinybot timing-test --resets 30`) plays the active sequence with every random wait fixed at its
 middle and every press at an exact time after the soft reset, then groups the summary screens.
 A few starters repeating means the Switch gives the same starter for the same timing, so
 aiming at a planned shiny can work; a different starter nearly every time means it can't, and
-the normal hunt is the way. A picture of each different starter is saved as
+the normal hunt is the way. (On the Switch tested so far: 17 different in 30, so it can't.) A picture of each different starter is saved as
 `shinybot_output/timing_starter_N.png`. Start it from your hunting save, as for a hunt.
 
 Tips: press one button at a time (buttons pressed together are recorded as a
