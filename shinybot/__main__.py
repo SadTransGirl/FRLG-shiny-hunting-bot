@@ -27,6 +27,7 @@ from .config import CONFIG_FILE, Config
 from .hunt import SETUP_FRAME, Hunter, HuntStopped
 from .newgame import Plan, describe_candidates, run_plan
 from .sequence import sequence_duration
+from .timing import timing_test
 
 MAX_WINDOW_WIDTH = 1280
 
@@ -159,15 +160,30 @@ async def cmd_new_game(config: Config, plan: Plan) -> None:
     print(describe_candidates(plan, int(tid)))
 
 
+async def cmd_timing_test(config: Config, resets: int) -> None:
+    hunter = Hunter(None, None, config, OUTPUT_DIR)  # for its checks of the setup and screen
+    print(f'Timing test: {resets} resets of the "{config.active_sequence}" sequence with fixed timing '
+          f'(about {resets * sequence_duration(config.sequence) / 60:.0f} minutes). Don\'t touch the Switch.')
+    controller = await connect_controller(config)
+    try:
+        with FrameGrabber(config.camera, *config.frame_size) as frames:
+            groups = await timing_test(controller, frames, config.sequence, config.sprite_box, OUTPUT_DIR,
+                                       resets, hunter.expected_screen, config.screen_box)
+        print(groups.verdict()[1])
+    finally:
+        await controller.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog='python -m shinybot', description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('command',
                         choices=['cameras', 'preview', 'setup', 'test-sequence', 'hunt', 'gui',
-                                 'new-game', 'sid'])
+                                 'new-game', 'sid', 'timing-test'])
     parser.add_argument('--camera', type=int, help='capture device number (saved to the config)')
     parser.add_argument('--plan', default='newgame_plan.json', help='new-game plan from the emulator')
     parser.add_argument('--tid', type=int, help='sid: the IDNo. on the trainer card')
+    parser.add_argument('--resets', type=int, default=30, help='timing-test: how many resets')
     parser.add_argument('--fps', type=float, help='new-game: frames a second on the Switch (default: the plan\'s, 60)')
     args = parser.parse_args()
     if args.command == 'sid':
@@ -203,6 +219,8 @@ def main() -> None:
             cmd_setup(config)
         elif args.command == 'test-sequence':
             asyncio.run(cmd_test_sequence(config))
+        elif args.command == 'timing-test':
+            asyncio.run(cmd_timing_test(config, args.resets))
         elif args.command == 'new-game':
             plan = Plan.load(args.plan)
             if args.fps:

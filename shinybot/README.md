@@ -90,6 +90,14 @@ port measured jumps of 18,800-27,400 per frame), so 5 s of random wait is about 
 5 s of standing in the lab about 300 starters from each: around 90,000 different starters,
 each shiny with the usual 1 in 8,192.
 
+**Timing test (before aiming at a planned shiny).** Sequence > **Timing** (or `python -m
+shinybot timing-test --resets 30`) plays the active sequence with every random wait fixed at its
+middle and every press at an exact time after the soft reset, then groups the summary screens.
+A few starters repeating means the Switch gives the same starter for the same timing, so
+aiming at a planned shiny can work; a different starter nearly every time means it can't, and
+the normal hunt is the way. A picture of each different starter is saved as
+`shinybot_output/timing_starter_N.png`. Start it from your hunting save, as for a hunt.
+
 Tips: press one button at a time (buttons pressed together are recorded as a
 chord, which is how the soft reset is recorded). Stick movements aren't
 recorded, so use the D-pad. If a step is flaky when replayed, add a little

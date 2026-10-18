@@ -31,11 +31,12 @@ from .sequence import has_random_wait
 from .keymap import InputState, apply_to_controller
 from .newgame import Plan, describe_candidates, run_plan
 from .recorder import Recorder
+from .timing import timing_test
 
 BOT_JOBS = ('hunt', 'test', 'newgame')  # jobs that press the Switch's buttons themselves
 logger = logging.getLogger('shinybot.gui')
 
-SIDE_WIDTH = 320  # px (before display scaling) of the Hunt page's right column
+SIDE_WIDTH = 340  # px (before display scaling) of the Hunt page's right column
 DEFAULT_SIZE = (1200, 780)  # px before display scaling; capped to the screen
 MIN_SIZE = (900, 600)
 SOFT_RESET = ('A', 'B', 'PLUS', 'MINUS')
@@ -361,10 +362,11 @@ class App:
                                    command=lambda _v: self._choose_sequence(), width=10)
         self.sequence_box.pack(fill='x', pady=(0, 8))
         row = self._button_row(sequence.body, [('Test', self.test_sequence, 'normal'),
+                                               ('Timing', self.timing_test, 'normal'),
                                                ('Record', self.toggle_record, 'normal'),
                                                ('Edit', self.edit_sequence, 'normal')])
         row.pack(fill='x')
-        self.record_button = row.grid_slaves(row=0, column=1)[0]
+        self.record_button = row.grid_slaves(row=0, column=2)[0]
         label(sequence.body, 'Regions (on the summary screen)', muted=True, font='small',
               wrap=True).pack(fill='x', pady=(10, 4))
         self._button_row(sequence.body, [('Sprite box', lambda: self.mark_box('sprite'), 'normal'),
@@ -1013,6 +1015,31 @@ class App:
             messagebox.showinfo('Not ready', str(error))
             return
         self._start_job('hunt', self.hunter.run, on_done=self._shiny_found)
+
+    def timing_test(self) -> None:
+        if not self._bot_ready():
+            return
+        try:
+            hunter = Hunter(self.controller, self.frames, self.config, OUTPUT_DIR)
+        except HuntStopped as error:
+            messagebox.showinfo('Not ready', str(error))
+            return
+        resets = simpledialog.askinteger(
+            'Timing test',
+            f'Plays the "{self.config.active_sequence}" sequence with fixed timing (random waits at '
+            'their middle, every press at an exact time) and counts how many different starters '
+            'that gives. A few repeating = aiming at a planned shiny can work.\n\n'
+            'Start from your hunting save, as for a hunt. How many resets?',
+            initialvalue=30, minvalue=5, maxvalue=500, parent=self.root)
+        if not resets:
+            return
+
+        async def run():
+            groups = await timing_test(self.controller, self.frames, self.config.sequence,
+                                       self.config.sprite_box, OUTPUT_DIR, resets, hunter.expected_screen,
+                                       self.config.screen_box)
+            return groups.verdict()[1]
+        self._start_job('test', run, on_done=lambda text: messagebox.showinfo('Timing test', text))
 
     # -- frame-timed new game (for the SID) ----------------------------------
 
